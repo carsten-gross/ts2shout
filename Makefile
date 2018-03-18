@@ -23,3 +23,7 @@ crc32.o: crc32.c
 clean:
 	rm -f *.o ts2shout
 
+install: ts2shout
+	install -g root -m 555 -o root ts2shout ${PREFIX}/bin/ts2shout
+	install -D -g root -m 444 -o root ts2shout.1 ${PREFIX}/man/man1/ts2shout.1 
+

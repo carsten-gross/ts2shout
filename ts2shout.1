@@ -1,0 +1,33 @@
+.TH TS2SHOUT 1L "18.03.2018" "User Commands" "Linux Users's Manual"
+.SH NAME
+.B ts2shout - Convert a MPEG transport stream to shoutcast or plain mpeg
+.SH SYNOPSIS
+.B t2shout [noshout]
+.sp
+.B cat mpeg-transport.ts | ts2shout noshout > audio.mpeg
+.sp
+.SH DESCRIPTION
+.B ts2shout 
+is a classic unix filter program, further described on http://www.siski.de/~carsten/radio-streaming-squeezebox.html. 
+As a unix filter you can feed an audio mpeg transport stream directly into stdin of the application. It will 
+give you a shoutcast audio stream (makes only sense in conjunction with a web server) or an plain mpeg audio stream.
+.sp
+Normally
+.B ts2shout 
+is installed as a mod_ext_filter in an web server application like apache. For
+test cases it is always possible to use it at the command prompt to manually
+convert an mpeg transport stream into native mpeg audio. You have to use
+the option \fB noshout \fR then.
+.sp
+Used as a webfilter it converts from MIME type audio/mp2t to audio/mpeg. 
+
+.SH OPTIONS
+.B noshout	
+write a native mpeg stream, not a shoutcast media stream
+
+.SH BUGS
+Got the feedback that some streams are not working correctly. The streams from German public radio are working flawlessly.
+ 
+.SH "SEE ALSO"
+.BR apache2 (1), tvheadend (1), mpg123 (1)
+

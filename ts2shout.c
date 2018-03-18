@@ -430,14 +430,14 @@ static unsigned long int extract_pes_payload( unsigned char *pes_ptr, size_t pes
 	
 	// Got enough to send packet?
 	if (chan->buf_used > chan->payload_size ) {
-		
 		// Ensure a MPEG Audio frame starts here
-		if (chan->buf_ptr[0] != 0xFF) {
-			output_logmessage("extract_pes_payload: Warning, lost MPEG Audio sync for PID %d.\n", chan->pid);
-			chan->synced = 0;
-			chan->buf_used = 0;
-			return bytes_written;
-		}
+		// this makes problems with programmes like "Radio Bob!" (44100 kHz, 256 kBit/s bitrate)
+		// if (chan->buf_ptr[0] != 0xFF) {
+		// 	output_logmessage("extract_pes_payload: Warning, lost MPEG Audio sync for PID %d.\n", chan->pid);
+		//	chan->synced = 0;
+		//	chan->buf_used = 0;
+		//	return bytes_written;
+		// }
 		
 		#ifndef DEBUG 
 		/* If Icy-MetaData is set to 1 a shoutcast StreamTitle is required all 8192 */ 
