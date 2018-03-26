@@ -83,6 +83,7 @@
 #define EIT_PACKET_TABLEID(b)		(b[0])
 #define EIT_SECTION_LENGTH(b) (uint16_t)(((b[1] & 0x0f)<<8)|b[2])
 #define EIT_SERVICE_ID(b)			(uint32_t)((b[3]<<8) | b[4])
+#define EIT_VERSION_NUMBER(b)		(uint8_t)((b[5] & 0x3e)>>1 )
 #define EIT_SECTION_NUMBER(b)		(b[6])
 #define EIT_LAST_SECTION_NUMBER(b)	(b[7])
 #define EIT_TRANSPORT_STREAM_ID(b)	(uint32_t)(b[8]<<8 | b[9])
@@ -91,12 +92,12 @@
 #define EIT_PACKET_EVENTSP(b)		(b + 14)
 
 /* Macros for accessing the Eventinformation */
-#define EIT_EVENT_EVENTID(b)		(uint32_t)((b[0]<<8) | ( b[1]))
+#define EIT_EVENT_EVENTID(b)		(uint16_t)((b[0]<<8) | ( b[1]))
 #define EIT_EVENT_STARTTIME_TIME(b)	(uint32_t)(b[4]<<16 | b[5]<<8 | b[6])
 #define EIT_EVENT_STARTTIME_DATE(b) (uint32_t)(b[2]<<8 | b[3])
-#define EIT_EVENT_DURATION(b)			(uint32_t)(b[7]<<16 | b[8]<<8 | b[9])
+#define EIT_EVENT_DURATION(b)		(uint32_t)(b[7]<<16 | b[8]<<8 | b[9])
 #define EIT_EVENT_RUNNING_STATUS(b)	((b[10] & 0xe0)>>5)
-#define EIT_EVENT_LOOPLENGTH(b)		(uint32_t)(b[10]&0x0f<<16 | b[11]<<8 | b[12])
+#define EIT_EVENT_LOOPLENGTH(b)		(uint16_t)( ((b[10]&0x0f)<<8) | b[11] )
 #define EIT_EVENT_DESCRIPTORP(b)	(b + 12)
 
 #define EIT_DESCRIPTOR_TAG(b)		(b[0]) 
@@ -242,6 +243,15 @@ typedef struct dvbshout_channel_s {
 	
 
 } dvbshout_channel_t;
+
+typedef struct section_aggregate_s {
+	uint8_t		buffer_valid;		/* Buffer is valid */
+	uint8_t		continuation;		/* A continued (EIT) information block is found */
+	uint8_t		counter;			/* The counter for the current fragment */
+	uint16_t	offset;				/* Determine the offset in the information buffer */
+	uint16_t	section_length;		/* The section length as found in the first ts packet */
+	uint8_t buffer[5000];
+} section_aggregate_t; 
 
 /* crc32.c */
 uint32_t crc32 (unsigned char *data, int len); 

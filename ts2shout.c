@@ -1,10 +1,10 @@
 /* 
 
-	dvbshout.c
+	ts2shout.c
+	(C) Carsten Gross <carsten@siski.de> 2018
+	reworked from dvbshout.c written by 
 	(C) Dave Chapman <dave@dchapman.com> 2001, 2002.
 	(C) Nicholas J Humfrey <njh@aelius.com> 2006.
-	reworked to be ts2shout.c
-	(C) Carsten Gross <carsten@siski.de> 2018
 	
 	Copyright notice:
 	
@@ -47,9 +47,10 @@ int channel_count=0;  /* Current listen channel count */
 int shoutcast=1;      /* Send shoutcast headers? */
 int logformat=1;	  /* Apache compatible output format */
 
-
 dvbshout_channel_t *channel_map[MAX_PID_COUNT];
 dvbshout_channel_t *channels[MAX_CHANNEL_COUNT];
+
+section_aggregate_t *eit_table4e_active;
 
 static void signal_handler(int signum)
 {
@@ -61,18 +62,27 @@ static void signal_handler(int signum)
 
 static void parse_args(int argc, char **argv) 
 {
+	/* TODO ... improve command line handling */
 	if (argc == 2) {
 		if (strcmp("noshout", argv[1]) == 0) {
 			shoutcast = 0;
 		}
 	}
-	#if 0
-		fprintf(stderr,"%s version %s\n", PACKAGE_NAME, PACKAGE_VERSION);
-		fprintf(stderr,"Usage: dvbshout <configfile>\n\n");
-		exit(-1);
-	#endif 
-	init_structures();
 }
+
+void cleanup_mpeg_string(char *string) {
+	uint32_t i = 0;
+	if (string == NULL)
+		return;
+	for (i = 0; i < strlen(string); i++) {
+		/* replace control character "LF/CR" by Space */
+		if ((unsigned char)string[i] == 0x8a) {
+			string[i] = 0x20; 
+		}
+	}
+	return; 
+}
+
 
 /* Output logmessage in apache errorlog compatible format */
 void output_logmessage(const char *fmt, ... ) {
@@ -236,55 +246,138 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout_channel_t *chan, int start_of_pes )
 {
 	unsigned char* start = NULL;
-	char short_description[255]; 
-	char text_description[255]; 
+	char short_description[5000]; 
+	char text_description[5000]; 
 
-	memset(short_description, 0, 255); 
-	memset(text_description, 0, 255); 
+	memset(short_description, 0, 5000); 
+	memset(text_description, 0, 5000); 
 	
 	start = pes_ptr + start_of_pes;
+	/* If an information block doesn't fit into an mpeg-ts frame it is continued directly in the next frame. The information is 
+	 * directly attached after the PID (4 Byte offset). It is possible that there is a multi-ts-frame continuation 
+	 * we have to calculate a lot */
+	if (eit_table4e_active->continuation > 0) {
 #ifdef DEBUG
-	fprintf (stderr, "EIT: Found table 0x%2.2x (last table 0x%2.2x), Section: %d, %p, %d\n", 
-			EIT_PACKET_TABLEID(start), 
-			EIT_PACKET_LAST_TABLEID(start),
-			EIT_SECTION_NUMBER(start), 
-			pes_ptr, start_of_pes); 
-#endif
+		fprintf(stderr, "EIT: continued frame: offset: %d, counter: %d, section_length: %d\n", 
+			eit_table4e_active->offset, eit_table4e_active->counter, eit_table4e_active->section_length); 
+#endif 
+		memcpy(eit_table4e_active->buffer + eit_table4e_active->offset - 4, pes_ptr + start_of_pes, TS_PACKET_SIZE - start_of_pes);		
+		eit_table4e_active->offset += TS_PACKET_SIZE - 4; /* Offset for next TS packet */
+		eit_table4e_active->counter += 1;
+		/* TS_PACKET_SIZE is not correct, only roughly correct */
+		if (eit_table4e_active->offset >= eit_table4e_active->section_length) {
+			/* Section is finished, finally */
+			eit_table4e_active->buffer_valid = 1; 
+			eit_table4e_active->continuation = 0; 
+#ifdef DEBUG
+			fprintf(stderr, "EIT: finished multi-frame table after offset %d, counter: %d\n", 
+				eit_table4e_active->offset, eit_table4e_active->counter); 
+#endif 
+		} else {
+			return;
+		}
+		/* Move start of packet to helper buffer for long frames */
+	} 
+	if ( eit_table4e_active->buffer_valid == 0) {
+		/* A short EIT frame < TS_PACKET_SIZE length */
+		if ( eit_table4e_active->continuation == 0 && EIT_SECTION_LENGTH(start) < (TS_PACKET_SIZE - start_of_pes ) ) {
+			eit_table4e_active->buffer_valid = 1; 
+			eit_table4e_active->continuation = 0;
+			eit_table4e_active->counter = 1; 
+			eit_table4e_active->section_length = EIT_SECTION_LENGTH(start); 
+			eit_table4e_active->offset = 0; 
+			memcpy(eit_table4e_active->buffer, start, TS_PACKET_SIZE - start_of_pes );
+		} else if ( ( EIT_SECTION_LENGTH(start) >= (TS_PACKET_SIZE - start_of_pes )) && ( 0 == eit_table4e_active->continuation ) ) {
+			/* A long frame, will be continued in next frame */
+			eit_table4e_active->buffer_valid = 0; /* It's not valid @ the moment */
+			eit_table4e_active->continuation = 1;
+			eit_table4e_active->counter = 1; 
+			eit_table4e_active->section_length = EIT_SECTION_LENGTH(start); 
+			eit_table4e_active->offset = TS_PACKET_SIZE - start_of_pes; /* Offset for next TS packet */
+			/* Copy first frame directly into buffer */
+			memcpy(eit_table4e_active->buffer, pes_ptr + start_of_pes, TS_PACKET_SIZE - start_of_pes );
+			/* Packet is not finished yet, it cannot be handled now */
+	#ifdef DEBUG
+			fprintf (stderr, "EIT: Found multi-frame-table 0x%2.2x (last table 0x%2.2x), Section: %d\n",
+				EIT_PACKET_TABLEID(start), EIT_PACKET_LAST_TABLEID(start), EIT_SECTION_NUMBER(start)); 
+	#endif 
+			return; 
+		}
+	}
+	/* ok, frame should be valid, repoint start */
+	start = eit_table4e_active->buffer;
+#ifdef DEBUG
+	if (eit_table4e_active->buffer_valid == 1) {
+		// fprintf(stderr, "EIT: Dumping full buffer .. \n");
+		// write(2, eit_table4e_active->buffer, eit_table4e_active->section_length); 
+		// fprintf(stderr, "\n");
+	}
+#endif 
 	/* 0x4e current_event table */
-	if ( 0x4e == EIT_PACKET_TABLEID(start)) {
+	if (eit_table4e_active->buffer_valid == 1 &&  0x4e == EIT_PACKET_TABLEID(start)) {
 		/* Current programme found */
 		unsigned char* event_start = EIT_PACKET_EVENTSP(start);
 		unsigned char* description_start = EIT_EVENT_DESCRIPTORP(event_start);
 #ifdef DEBUG
-		fprintf(stderr, "EIT: Found event with id %d, currently in status %d, starttime %6.6x, duration %6.6x.\n",
+		unsigned char* first_description_start = EIT_EVENT_DESCRIPTORP(event_start);
+		fprintf(stderr, "EIT: Found event with id %d, currently in status %d, starttime %6.6x, duration %6.6x, Section: %d (V:%d) from %d (Length: %d).\n",
 			EIT_EVENT_EVENTID(event_start),
 			EIT_EVENT_RUNNING_STATUS(event_start),
 			EIT_EVENT_STARTTIME_TIME(event_start),
-			EIT_EVENT_DURATION(event_start));
+			EIT_EVENT_DURATION(event_start), 
+			EIT_SECTION_NUMBER(start), 
+			EIT_VERSION_NUMBER(start),
+			EIT_LAST_SECTION_NUMBER(start),
+			EIT_SECTION_LENGTH(start));
 #endif 
-		/* Check crc32 - seems not to work for all programmes? */
-		/* 
-		if (crc32((char *)start, EIT_SECTION_LENGTH(start)+3) != 0) {
+		/* Check crc32, does also work for full frames */
+		if (crc32(start, EIT_SECTION_LENGTH(start)+3) != 0) {
 #ifdef DEBUG
-			fprintf(stderr, "EIT: crc32 does not match, calculated %d, expected 0\n", crc32((char *)start, EIT_SECTION_LENGTH(start)+3)); 
-#endif 
+			fprintf(stderr, "EIT: crc32 does not match, calculated %d, expected 0, with section length: %d\n", crc32(start, EIT_SECTION_LENGTH(start)+3), EIT_SECTION_LENGTH(start)+3); 
+#endif	
+			eit_table4e_active->buffer_valid = 0;
 			return; 
-		}
-		*/ 
+		} 
 		/* 0x4d = Short event descriptor found */
 		if (EIT_DESCRIPTOR_TAG(description_start) == 0x4d) {
-			unsigned int stringlen = EIT_NAME_LENGTH(description_start); 
+			/* Step through the event descriptions */
+			uint16_t current_in_position = 0; 
+			uint16_t current_out_position = 0; 
+			uint16_t max_size = EIT_EVENT_LOOPLENGTH(event_start);
+			unsigned int stringlen = 0; 
+			unsigned char* text1_start = NULL; 
+			int text1_len = 0; 
+			stringlen = EIT_NAME_LENGTH(description_start); 
 			snprintf(short_description, stringlen, "%s", EIT_NAME_CONTENT(description_start) + 1);
-			/* Avoid the character code marker 0x05 for latin1 */
-			unsigned char* text_start = description_start + EIT_SIZE_DESCRIPTOR_HEADER + stringlen;
-			int text_len = text_start[0];
+			while (current_in_position + 60 <= max_size && current_in_position < eit_table4e_active->section_length) {
+				stringlen = EIT_NAME_LENGTH(description_start); 
+				/* Avoid the character code marker 0x05 for latin1 */
+				text1_start = description_start + EIT_SIZE_DESCRIPTOR_HEADER + stringlen;
+				text1_len = text1_start[0];
+				if (text1_len == 0 || text1_len > max_size) break;
+				memcpy(text_description + current_out_position, text1_start + 2, text1_len - 1);
+				/* First round? */
+				if (current_out_position == 0 && ( 70 < max_size) ) {
+					/* Hack */
+					strcpy(text_description + current_out_position + text1_len - 1, " ~ ");
+					memset(text_description + current_out_position + text1_len + 3 - 1, 0, 1);
+					current_out_position += text1_len + 3 - 1; 
+				} else {
+					memset(text_description + current_out_position + text1_len - 1, 0, 1);
+					current_out_position += text1_len - 1; 
+				}
 #ifdef DEBUG
-			fprintf(stderr, "DEBUG: text_len: %d\n", text_len);
+				fprintf(stderr, "DEBUG: text1: %s, in_pos: %d (%d), text1_len: %d, global_len: %d\n", text_description, current_in_position,
+					current_in_position + text1_len + EIT_SIZE_DESCRIPTOR_HEADER + stringlen, text1_len, max_size);
 #endif
-			snprintf(text_description, text_len, "%s", text_start + 2); 
+				description_start = description_start + EIT_SIZE_DESCRIPTOR_HEADER + stringlen + 1 + text1_len + 1; 
+				current_in_position += EIT_SIZE_DESCRIPTOR_HEADER + stringlen + 1 + text1_len + 1;
+			}
+			/* Replace control characters */
+			cleanup_mpeg_string(text_description);
 			if ( EIT_EVENT_RUNNING_STATUS(event_start) == 4) {
 #ifdef DEBUG				
-				fprintf(stderr, "EIT: RUNNING EVENT: %s (%s) in language %3.3s found.\n", short_description, text_description, EIT_DESCRIPTOR_LANG(description_start)); 
+				fprintf(stderr, "EIT: RUNNING EVENT: %s (%s) in language %3.3s found.\n", short_description, text_description, EIT_DESCRIPTOR_LANG(first_description_start)); 
 #endif			/* Write full info into channel title, but only if there is a difference between text and short description */
 				if (text_description != NULL && strlen(text_description) > 0 ) {
 					snprintf(chan->title, STR_BUF_SIZE - 1, "%s - %s", short_description, text_description); 
@@ -294,11 +387,12 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 				}
 			} else {
 #ifdef DEBUG
-				fprintf(stderr, "EIT: Event %s in Language %3.3s found.\n", short_description, EIT_DESCRIPTOR_LANG(description_start));
+				fprintf(stderr, "EIT: Event %s in Language %3.3s found.\n", short_description, EIT_DESCRIPTOR_LANG(first_description_start));
 #endif 
 			}
 		}
 	}
+	eit_table4e_active->buffer_valid = 0; 
 	return;
 }
 
@@ -490,8 +584,13 @@ static unsigned long int extract_pes_payload( unsigned char *pes_ptr, size_t pes
 	return bytes_written; 
 }
 
-/* This is the main processing loop for the incoming stream data */
+/* This is a helper function for the processing loop of process_ts_packets 
+ * it resets the the data collector if the pid changes */
+void pid_change() {
+	memset(eit_table4e_active, 0, sizeof(section_aggregate_t)); 
+}
 
+/* This is the main processing loop for the incoming stream data */
 void process_ts_packets( int fd_dvr )
 {
 	unsigned char buf[TS_PACKET_SIZE];
@@ -501,7 +600,7 @@ void process_ts_packets( int fd_dvr )
 	int bytes_read;
 	long int bytes_streamed_read = 0; 
 	long int bytes_streamed_write = 0; 
-	const long int mb_conversion = 1048576;
+	const long int mb_conversion = 1024 * 1024;
 	uint16_t ts_sync_error = 0; 
 	const uint16_t max_sync_errors = 5; 
 	
@@ -509,11 +608,9 @@ void process_ts_packets( int fd_dvr )
 		
 		bytes_read = read(fd_dvr,buf,TS_PACKET_SIZE);
 		bytes_streamed_read += bytes_read; 
-		// fprintf(stderr, "Bytes read: %d, errorno=%d\n", bytes_read, errno);
-		// if (bytes_read==0) continue;
 		if (bytes_read == 0) {
 			output_logmessage("process_ts_packets: read from stream %.2f MB, wrote %.2f MB, no bytes left to read - EOF. Exiting.\n", 
-			                  (float)bytes_streamed_read/1000000, (float)bytes_streamed_write/mb_conversion);
+			                  (float)bytes_streamed_read/mb_conversion, (float)bytes_streamed_write/mb_conversion);
 			break; 
 		}
 		if (bytes_read > 0 && bytes_read < TS_PACKET_SIZE) {
@@ -535,33 +632,34 @@ void process_ts_packets( int fd_dvr )
 		if (TS_PACKET_SYNC_BYTE(buf) != 0x47) {
 			int i = 1;
 			int did_read = 0; 
+			/* Check whether we are completly lost 
+			 * (got no synchronisation on transport-stream start after max_sync_errors tries) */
+			ts_sync_error += 1; 
+			if (ts_sync_error > max_sync_errors) {
+				output_logmessage("process_ts_packets: After reading %.2f MB and writing %.2f, " \
+				                  "Lost synchronisation (sync loss counter of %d exceeded) - Exiting\n", 
+					(float)bytes_streamed_read/mb_conversion, (float)bytes_streamed_write/mb_conversion, max_sync_errors);
+				return; 
+			}
 			for (i = 1; i < TS_PACKET_SIZE; i++) {
 				if (0x47 == buf[i]) {
+					/* throw rest of buffer away */
 					bytes_read = read(fd_dvr, buf, i);
 					did_read = i;
 					continue; 
 				}
 			}
+			/* No 0x47 found, most likly we are lost */
 			if (0 == did_read) {
-				output_logmessage("process_ts_packets: After reading %.2f MB and writing %.2f, Lost synchronisation - skipping full block (Lost counter %d, aborting at %d) \n", (float)bytes_streamed_read/mb_conversion, (float)bytes_streamed_write/mb_conversion, ts_sync_error, max_sync_errors);
+				output_logmessage("process_ts_packets: After reading %.2f MB and writing %.2f, " \
+				                  "Lost synchronisation - skipping full block (Lost counter %d, aborting at %d) \n", 
+					(float)bytes_streamed_read/mb_conversion, (float)bytes_streamed_write/mb_conversion, ts_sync_error, max_sync_errors);
 			} else {
-				output_logmessage("process_ts_packets: After reading %.2f MB and writing %.2f, Lost synchronisation - skipping %d bytes (Lost counter %d, aborting at %d) \n", (float)bytes_streamed_read/mb_conversion, (float)bytes_streamed_write/mb_conversion, did_read, ts_sync_error, max_sync_errors);
+				output_logmessage("process_ts_packets: After reading %.2f MB and writing %.2f, " \
+				                  " Lost synchronisation - skipping %d bytes (Lost counter %d, aborting at %d) \n", 
+					(float)bytes_streamed_read/mb_conversion, (float)bytes_streamed_write/mb_conversion, did_read, ts_sync_error, max_sync_errors);
 			}
-			if (did_read > 0) {
-				ts_sync_error += 1;
-				if (ts_sync_error > max_sync_errors) {
-					output_logmessage("process_ts_packets: After reading %.2f MB and writing %.2f, Lost synchronisation (sync loss counter of %d exceeded)\n", (float)bytes_streamed_read/mb_conversion, (float)bytes_streamed_write/mb_conversion, max_sync_errors);
-					return; 
-				}
-				continue;
-			}
-			/* No 0x47 found, most likly we are completly lost */
-			ts_sync_error += 1; 
-			if (ts_sync_error > max_sync_errors) {
-				output_logmessage("process_ts_packets: After reading %.2f MB and writing %.2f, Lost synchronisation (sync loss counter of %d exceeded)\n", (float)bytes_streamed_read/mb_conversion, (float)bytes_streamed_write/mb_conversion, max_sync_errors);
-				return; 
-			}
-			continue;
+			continue; /* read next block */
 		}
 		
 		// Get the PID of this TS packet
@@ -604,32 +702,34 @@ void process_ts_packets( int fd_dvr )
 			// Continuity check
 			ts_continuity_check( channel_map[ pid ], TS_PACKET_CONT_COUNT(buf) );
 			enum_channel_type channel_type = channel_map[ pid ]->channel_type; 
+			ts_sync_error = 0; 
 			switch (channel_type) {
 				case CHANNEL_TYPE_PAT: 
 					extract_pat_payload(pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
-					ts_sync_error = 0; 
+					pid_change(); 
 					break;
 				case CHANNEL_TYPE_EIT: 
 					extract_eit_payload ( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
-					ts_sync_error = 0;
+					ts_sync_error = 0; /* no pid_change() because it resets the EIT stuff */
 					break;
 				case CHANNEL_TYPE_SDT: 
 					extract_sdt_payload ( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
-					ts_sync_error = 0; 
+					pid_change(); 
 					break;
 				case CHANNEL_TYPE_PMT: 
 					extract_pmt_payload ( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
-					ts_sync_error = 0; 
+					pid_change();
 					break;
 				case CHANNEL_TYPE_PAYLOAD: 
 					bytes_streamed_write += extract_pes_payload( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
-					ts_sync_error = 0; 
+					pid_change();
 					break; 
 				default: 
 #ifdef DEBUG
 					fprintf(stderr, "Warning: don't know anything about PID %d.\n", pid);
 #endif 
-				break;
+					pid_change();
+					break;
 			}
 		}
 	}
@@ -647,9 +747,12 @@ int main(int argc, char **argv)
 	// Initialise data structures
 	for (i=0;i<MAX_PID_COUNT;i++) channel_map[i]=NULL;
 	for (i=0;i<MAX_CHANNEL_COUNT;i++) channels[i]=NULL;
+
+	eit_table4e_active = calloc(1, sizeof(section_aggregate_t));
 	
 	// Parse command line arguments
 	parse_args( argc, argv );
+	init_structures();
 
 	// Open the DRV device
 	if((fd_dvr = open("/dev/stdin", O_RDONLY)) < 0){
