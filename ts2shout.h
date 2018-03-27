@@ -53,7 +53,7 @@
 #define MAX_PID_COUNT			8192
 
 // Standard string buffer size
-#define STR_BUF_SIZE			1025
+#define STR_BUF_SIZE			6000
 
 // Maximum allowed PID value
 #define RTP_MPEG_AUDIO_PT		14
@@ -265,9 +265,9 @@ extern dvbshout_channel_t *channels[MAX_CHANNEL_COUNT];
 /* In pes.c */
 unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, dvbshout_channel_t *chan);
 
-/* In parse_config.c */
+/* In util.c */
 void init_structures();
 int add_channel(enum_channel_type channel_type, int pid); 
-
+unsigned char *utf8(unsigned char* in, unsigned char* out); 
 
 #endif

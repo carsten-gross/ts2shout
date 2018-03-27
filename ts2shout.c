@@ -246,11 +246,11 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout_channel_t *chan, int start_of_pes )
 {
 	unsigned char* start = NULL;
-	char short_description[5000]; 
-	char text_description[5000]; 
+	char short_description[STR_BUF_SIZE]; 
+	char text_description[STR_BUF_SIZE]; 
 
-	memset(short_description, 0, 5000); 
-	memset(text_description, 0, 5000); 
+	memset(short_description, 0, STR_BUF_SIZE); 
+	memset(text_description, 0, STR_BUF_SIZE); 
 	
 	start = pes_ptr + start_of_pes;
 	/* If an information block doesn't fit into an mpeg-ts frame it is continued directly in the next frame. The information is 
@@ -260,12 +260,15 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 #ifdef DEBUG
 		fprintf(stderr, "EIT: continued frame: offset: %d, counter: %d, section_length: %d\n", 
 			eit_table4e_active->offset, eit_table4e_active->counter, eit_table4e_active->section_length); 
+		// fprintf(stderr, "EIT: Dumping currently received-stuff  .. \n");
+		// write(2, pes_ptr + start_of_pes, TS_PACKET_SIZE - start_of_pes); 
+		// fprintf(stderr, "\n");
 #endif 
 		memcpy(eit_table4e_active->buffer + eit_table4e_active->offset - 4, pes_ptr + start_of_pes, TS_PACKET_SIZE - start_of_pes);		
 		eit_table4e_active->offset += TS_PACKET_SIZE - 4; /* Offset for next TS packet */
 		eit_table4e_active->counter += 1;
-		/* TS_PACKET_SIZE is not correct, only roughly correct */
-		if (eit_table4e_active->offset >= eit_table4e_active->section_length) {
+		/* TS_PACKET_SIZE is not perfectly correct, Hopefully it is nearly correct :-) */
+		if (eit_table4e_active->offset - 4 >= eit_table4e_active->section_length) {
 			/* Section is finished, finally */
 			eit_table4e_active->buffer_valid = 1; 
 			eit_table4e_active->continuation = 0; 
@@ -274,6 +277,13 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 				eit_table4e_active->offset, eit_table4e_active->counter); 
 #endif 
 		} else {
+			if (eit_table4e_active->offset + TS_PACKET_SIZE - 4 > STR_BUF_SIZE ) {
+				output_logmessage("extract_eit_payload: Maximum Data-Chunk Size of %d characters " \
+				    "exceeded by MPEG-Transport-Stream. Did read %d continued packets\n", 
+					STR_BUF_SIZE, eit_table4e_active->counter);
+				// reset internal buffer
+				memset(eit_table4e_active, 0, sizeof(section_aggregate_t));
+			}
 			return;
 		}
 		/* Move start of packet to helper buffer for long frames */
@@ -298,8 +308,8 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 			memcpy(eit_table4e_active->buffer, pes_ptr + start_of_pes, TS_PACKET_SIZE - start_of_pes );
 			/* Packet is not finished yet, it cannot be handled now */
 	#ifdef DEBUG
-			fprintf (stderr, "EIT: Found multi-frame-table 0x%2.2x (last table 0x%2.2x), Section: %d\n",
-				EIT_PACKET_TABLEID(start), EIT_PACKET_LAST_TABLEID(start), EIT_SECTION_NUMBER(start)); 
+			fprintf (stderr, "EIT: Found multi-frame-table 0x%2.2x (last table 0x%2.2x), Section-Length: %d, Section: %d\n",
+				EIT_PACKET_TABLEID(start), EIT_PACKET_LAST_TABLEID(start), EIT_SECTION_LENGTH(start), EIT_SECTION_NUMBER(start)); 
 	#endif 
 			return; 
 		}
@@ -333,7 +343,7 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 		/* Check crc32, does also work for full frames */
 		if (crc32(start, EIT_SECTION_LENGTH(start)+3) != 0) {
 #ifdef DEBUG
-			fprintf(stderr, "EIT: crc32 does not match, calculated %d, expected 0, with section length: %d\n", crc32(start, EIT_SECTION_LENGTH(start)+3), EIT_SECTION_LENGTH(start)+3); 
+			fprintf(stderr, "EIT: crc32 does not match, calculated %d, expected 0, using section length: %d\n", crc32(start, EIT_SECTION_LENGTH(start)+3), EIT_SECTION_LENGTH(start)+3); 
 #endif	
 			eit_table4e_active->buffer_valid = 0;
 			return; 
@@ -358,7 +368,7 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 				memcpy(text_description + current_out_position, text1_start + 2, text1_len - 1);
 				/* First round? */
 				if (current_out_position == 0 && ( 70 < max_size) ) {
-					/* Hack */
+					/* Hack, if the overall text is very short, no "~" */
 					strcpy(text_description + current_out_position + text1_len - 1, " ~ ");
 					memset(text_description + current_out_position + text1_len + 3 - 1, 0, 1);
 					current_out_position += text1_len + 3 - 1; 
@@ -376,14 +386,21 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 			/* Replace control characters */
 			cleanup_mpeg_string(text_description);
 			if ( EIT_EVENT_RUNNING_STATUS(event_start) == 4) {
+				char tmp_title[STR_BUF_SIZE]; 
 #ifdef DEBUG				
 				fprintf(stderr, "EIT: RUNNING EVENT: %s (%s) in language %3.3s found.\n", short_description, text_description, EIT_DESCRIPTOR_LANG(first_description_start)); 
 #endif			/* Write full info into channel title, but only if there is a difference between text and short description */
 				if (text_description != NULL && strlen(text_description) > 0 ) {
-					snprintf(chan->title, STR_BUF_SIZE - 1, "%s - %s", short_description, text_description); 
+					snprintf(tmp_title, STR_BUF_SIZE - 1, "%s - %s", short_description, text_description); 
 				} else {
 					/* Sonst nur short description */
-					snprintf(chan->title, STR_BUF_SIZE - 1, "%s", short_description);
+					snprintf(tmp_title, STR_BUF_SIZE - 1, "%s", short_description);
+				}
+				if (0 != strcmp(tmp_title, chan->title)) {
+					// It's needed in iso8859-1 for StreamTitle, but in UTF-8 for logging
+					unsigned char utf8_message[STR_BUF_SIZE];
+					strcpy(chan->title, tmp_title); 
+					output_logmessage("EIT: Current transmission `%s'\n", utf8((unsigned char*)short_description, utf8_message)); 
 				}
 			} else {
 #ifdef DEBUG

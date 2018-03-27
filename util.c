@@ -1,6 +1,6 @@
 /* 
 
-	init.c
+	util.c
 	(C) Carsten Gross <carsten@siski.de> 2018
 	
 	Copyright notice:
@@ -78,11 +78,24 @@ void init_structures() {
 		exit(1);
 	if (! add_channel(CHANNEL_TYPE_SDT, 17))
 		exit(1);
-	/* HACK! */
-#if 0
-	if (! add_channel(CHANNEL_TYPE_PAYLOAD, 4001))
-		exit(1); 
-#endif 
 	return;
 }
+
+/* from https://stackoverflow.com/questions/4059775/convert-iso-8859-1-strings-to-utf-8-in-c-c */
+unsigned char *utf8(unsigned char *in, unsigned char *out) {
+	uint32_t counter = 0;
+	unsigned char *outstart = out; 
+	while (*in && counter+2 < STR_BUF_SIZE) {
+	    if (*in<128) {
+			*out++=*in++;
+			counter++; 
+		} else {
+			*out++=0xc2+(*in>0xbf), *out++=(*in++&0x3f)+0x80;
+			counter += 2;
+		}
+	}
+	*out = 0;
+	return outstart; 
+}
+	
 	
