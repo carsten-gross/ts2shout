@@ -52,30 +52,27 @@ the Icy-MetaData header given in the http request.
 
 <pre>
 	&lt;Location /radio&gt;
-			Order Deny,Allow
-			Deny from all
-			Allow from 172.16.0.0/24
-			Allow from ::1
-			Allow from 127.0.0.1
-			Allow from 2a02:8071:3280:24f0::/64
-			%lt;If "%{HTTP:Icy-MetaData} in {'1'}"&gt;
-					SetEnv "MetaData" "1"
-			&lt;/If&gt,
-			SetEnv TVHEADEND "http://localhost:9981/stream/channelnumber"
-			# All radio stations. One line for every station
-			# the first name is the uri, PROGRAMMNO is the environment
-			# setting needed by ts2shout. 
-			# A radio is accessed with the URI local part for example
-			# /radio/swr1bw
-			# this fetches the mpeg transport from http://localhost:9981/stream/channelnumber/813
-			SetEnvIf REQUEST_URI "swr1bw$" PROGRAMMNO=813
-			SetEnvIf REQUEST_URI "swr2$" PROGRAMMNO=815
-			# As many as you need
-			SetEnvIf REQUEST_URI "drs2$" PROGRAMMNO=913
-			SetEnvIf REQUEST_URI "drs3$" PROGRAMMNO=914
+		Order Deny,Allow
+		Deny from all
+		Allow from 172.16.0.0/24
+		Allow from ::1
+		Allow from 127.0.0.1
+		Allow from 2a02:8071:3280:24f0::/64
+		&lt;If "%{HTTP:Icy-MetaData} in {'1'}"&gt;
+			SetEnv "MetaData" "1"
+		&lt;/If&gt;
+		SetEnv TVHEADEND "http://localhost:9981/stream/channelnumber"
+		# All radio stations. One line for every station
+		# the first name is the uri, PROGRAMMNO is the environment
+		# setting needed by ts2shout. 
+		# A radio is accessed with the URI local part for example
+		# /radio/swr1bw
+		# this fetches the mpeg transport from http://localhost:9981/stream/channelnumber/813
+		SetEnvIf REQUEST_URI "swr1bw$" PROGRAMMNO=813
+		SetEnvIf REQUEST_URI "swr2$" PROGRAMMNO=815
+		# As many as you need
+		SetEnvIf REQUEST_URI "drs2$" PROGRAMMNO=913
+		SetEnvIf REQUEST_URI "drs3$" PROGRAMMNO=914
 	&lt;/Location&gt;
-
-
 </pre>
-
 
