@@ -36,6 +36,7 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <time.h>
+#include <curl/curl.h>
 
 #include "ts2shout.h"
 #include "config.h"
@@ -44,13 +45,19 @@
 
 int Interrupted=0;    /* Playing interrupted by signal? */
 int channel_count=0;  /* Current listen channel count */
-int shoutcast=1;      /* Send shoutcast headers? */
-int logformat=1;	  /* Apache compatible output format */
+
+uint8_t shoutcast=1;      /* Send shoutcast headers? */
+uint8_t	logformat=1;	  /* Apache compatible output format */
+uint8_t	cgi_mode=0;	      /* Are we running as CGI programme? This is set if there is QUERY_STRING set in the environment */ 
 
 dvbshout_channel_t *channel_map[MAX_PID_COUNT];
 dvbshout_channel_t *channels[MAX_CHANNEL_COUNT];
 
-section_aggregate_t *eit_table4e_active;
+/* Structure that keeps track of connected EIT frames */
+section_aggregate_t *eit_table;
+
+/* Global application structure */
+programm_info_t *global_state;
 
 static void signal_handler(int signum)
 {
@@ -236,6 +243,8 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 					/* Yes, we want to get information about the programme */
 					output_logmessage("SDT: Stream is station %s from network %s.\n", service_name, provider_name);
 					strncpy(chan->name, service_name, STR_BUF_SIZE);
+					/* TODO Make this twice for the time being */
+					strncpy(global_state->station_name, service_name, STR_BUF_SIZE); 
 				}
 			}
 		}
@@ -256,56 +265,57 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 	/* If an information block doesn't fit into an mpeg-ts frame it is continued directly in the next frame. The information is 
 	 * directly attached after the PID (4 Byte offset). It is possible that there is a multi-ts-frame continuation 
 	 * we have to calculate a lot */
-	if (eit_table4e_active->continuation > 0) {
+	if (eit_table->continuation > 0) {
 #ifdef DEBUG
 		fprintf(stderr, "EIT: continued frame: offset: %d, counter: %d, section_length: %d\n", 
-			eit_table4e_active->offset, eit_table4e_active->counter, eit_table4e_active->section_length); 
+			eit_table->offset, eit_table->counter, eit_table->section_length); 
 		// fprintf(stderr, "EIT: Dumping currently received-stuff  .. \n");
 		// write(2, pes_ptr + start_of_pes, TS_PACKET_SIZE - start_of_pes); 
 		// fprintf(stderr, "\n");
 #endif 
-		memcpy(eit_table4e_active->buffer + eit_table4e_active->offset - 4, pes_ptr + start_of_pes, TS_PACKET_SIZE - start_of_pes);		
-		eit_table4e_active->offset += TS_PACKET_SIZE - 4; /* Offset for next TS packet */
-		eit_table4e_active->counter += 1;
+		memcpy(eit_table->buffer + eit_table->offset - 4, pes_ptr + start_of_pes, TS_PACKET_SIZE - start_of_pes);		
+		eit_table->offset += TS_PACKET_SIZE - 4; /* Offset for next TS packet */
+		eit_table->counter += 1;
 		/* TS_PACKET_SIZE is not perfectly correct, Hopefully it is nearly correct :-) */
-		if (eit_table4e_active->offset - 4 >= eit_table4e_active->section_length) {
+		if (eit_table->offset - 4 >= eit_table->section_length) {
 			/* Section is finished, finally */
-			eit_table4e_active->buffer_valid = 1; 
-			eit_table4e_active->continuation = 0; 
+			eit_table->buffer_valid = 1; 
+			eit_table->continuation = 0; 
 #ifdef DEBUG
 			fprintf(stderr, "EIT: finished multi-frame table after offset %d, counter: %d\n", 
-				eit_table4e_active->offset, eit_table4e_active->counter); 
+				eit_table->offset, eit_table->counter); 
 #endif 
 		} else {
-			if (eit_table4e_active->offset + TS_PACKET_SIZE - 4 > STR_BUF_SIZE ) {
+			// This should not happen, because the standard recommends a maximum size of ~4K */
+			if (eit_table->offset + TS_PACKET_SIZE - 4 > STR_BUF_SIZE ) {
 				output_logmessage("extract_eit_payload: Maximum Data-Chunk Size of %d characters " \
 				    "exceeded by MPEG-Transport-Stream. Did read %d continued packets\n", 
-					STR_BUF_SIZE, eit_table4e_active->counter);
+					STR_BUF_SIZE, eit_table->counter);
 				// reset internal buffer
-				memset(eit_table4e_active, 0, sizeof(section_aggregate_t));
+				memset(eit_table, 0, sizeof(section_aggregate_t));
 			}
 			return;
 		}
 		/* Move start of packet to helper buffer for long frames */
 	} 
-	if ( eit_table4e_active->buffer_valid == 0) {
+	if ( eit_table->buffer_valid == 0) {
 		/* A short EIT frame < TS_PACKET_SIZE length */
-		if ( eit_table4e_active->continuation == 0 && EIT_SECTION_LENGTH(start) < (TS_PACKET_SIZE - start_of_pes ) ) {
-			eit_table4e_active->buffer_valid = 1; 
-			eit_table4e_active->continuation = 0;
-			eit_table4e_active->counter = 1; 
-			eit_table4e_active->section_length = EIT_SECTION_LENGTH(start); 
-			eit_table4e_active->offset = 0; 
-			memcpy(eit_table4e_active->buffer, start, TS_PACKET_SIZE - start_of_pes );
-		} else if ( ( EIT_SECTION_LENGTH(start) >= (TS_PACKET_SIZE - start_of_pes )) && ( 0 == eit_table4e_active->continuation ) ) {
+		if ( eit_table->continuation == 0 && EIT_SECTION_LENGTH(start) < (TS_PACKET_SIZE - start_of_pes ) ) {
+			eit_table->buffer_valid = 1; 
+			eit_table->continuation = 0;
+			eit_table->counter = 1; 
+			eit_table->section_length = EIT_SECTION_LENGTH(start); 
+			eit_table->offset = 0; 
+			memcpy(eit_table->buffer, start, TS_PACKET_SIZE - start_of_pes );
+		} else if ( ( EIT_SECTION_LENGTH(start) >= (TS_PACKET_SIZE - start_of_pes )) && ( 0 == eit_table->continuation ) ) {
 			/* A long frame, will be continued in next frame */
-			eit_table4e_active->buffer_valid = 0; /* It's not valid @ the moment */
-			eit_table4e_active->continuation = 1;
-			eit_table4e_active->counter = 1; 
-			eit_table4e_active->section_length = EIT_SECTION_LENGTH(start); 
-			eit_table4e_active->offset = TS_PACKET_SIZE - start_of_pes; /* Offset for next TS packet */
+			eit_table->buffer_valid = 0; /* It's not valid @ the moment */
+			eit_table->continuation = 1;
+			eit_table->counter = 1; 
+			eit_table->section_length = EIT_SECTION_LENGTH(start); 
+			eit_table->offset = TS_PACKET_SIZE - start_of_pes; /* Offset for next TS packet */
 			/* Copy first frame directly into buffer */
-			memcpy(eit_table4e_active->buffer, pes_ptr + start_of_pes, TS_PACKET_SIZE - start_of_pes );
+			memcpy(eit_table->buffer, pes_ptr + start_of_pes, TS_PACKET_SIZE - start_of_pes );
 			/* Packet is not finished yet, it cannot be handled now */
 	#ifdef DEBUG
 			fprintf (stderr, "EIT: Found multi-frame-table 0x%2.2x (last table 0x%2.2x), Section-Length: %d, Section: %d\n",
@@ -315,16 +325,16 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 		}
 	}
 	/* ok, frame should be valid, repoint start */
-	start = eit_table4e_active->buffer;
+	start = eit_table->buffer;
 #ifdef DEBUG
-	if (eit_table4e_active->buffer_valid == 1) {
+	if (eit_table->buffer_valid == 1) {
 		// fprintf(stderr, "EIT: Dumping full buffer .. \n");
-		// write(2, eit_table4e_active->buffer, eit_table4e_active->section_length); 
+		// write(2, eit_table->buffer, eit_table->section_length); 
 		// fprintf(stderr, "\n");
 	}
 #endif 
 	/* 0x4e current_event table */
-	if (eit_table4e_active->buffer_valid == 1 &&  0x4e == EIT_PACKET_TABLEID(start)) {
+	if (eit_table->buffer_valid == 1 &&  0x4e == EIT_PACKET_TABLEID(start)) {
 		/* Current programme found */
 		unsigned char* event_start = EIT_PACKET_EVENTSP(start);
 		unsigned char* description_start = EIT_EVENT_DESCRIPTORP(event_start);
@@ -345,7 +355,7 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 #ifdef DEBUG
 			fprintf(stderr, "EIT: crc32 does not match, calculated %d, expected 0, using section length: %d\n", crc32(start, EIT_SECTION_LENGTH(start)+3), EIT_SECTION_LENGTH(start)+3); 
 #endif	
-			eit_table4e_active->buffer_valid = 0;
+			eit_table->buffer_valid = 0;
 			return; 
 		} 
 		/* 0x4d = Short event descriptor found */
@@ -359,7 +369,7 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 			int text1_len = 0; 
 			stringlen = EIT_NAME_LENGTH(description_start); 
 			snprintf(short_description, stringlen, "%s", EIT_NAME_CONTENT(description_start) + 1);
-			while (current_in_position + 60 <= max_size && current_in_position < eit_table4e_active->section_length) {
+			while (current_in_position + 60 <= max_size && current_in_position < eit_table->section_length) {
 				stringlen = EIT_NAME_LENGTH(description_start); 
 				/* Avoid the character code marker 0x05 for latin1 */
 				text1_start = description_start + EIT_SIZE_DESCRIPTOR_HEADER + stringlen;
@@ -399,7 +409,9 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 				if (0 != strcmp(tmp_title, chan->title)) {
 					// It's needed in iso8859-1 for StreamTitle, but in UTF-8 for logging
 					unsigned char utf8_message[STR_BUF_SIZE];
-					strcpy(chan->title, tmp_title); 
+					strcpy(chan->title, tmp_title);
+					/* TODO make this twice for the time being */
+					strcpy(global_state->stream_title, tmp_title); 
 					output_logmessage("EIT: Current transmission `%s'\n", utf8((unsigned char*)short_description, utf8_message)); 
 				}
 			} else {
@@ -409,7 +421,7 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 			}
 		}
 	}
-	eit_table4e_active->buffer_valid = 0; 
+	eit_table->buffer_valid = 0; 
 	return;
 }
 
@@ -524,7 +536,7 @@ static unsigned long int extract_pes_payload( unsigned char *pes_ptr, size_t pes
 		
 		
 		// If stream is synced then put data info buffer
-		if (chan->synced) {
+		if (chan->synced && global_state->output_payload) {
 		
 			// Check that there is space
 			if (chan->buf_used + es_len > chan->buf_size) {
@@ -539,8 +551,8 @@ static unsigned long int extract_pes_payload( unsigned char *pes_ptr, size_t pes
 	}
 	
 	
-	// Got enough to send packet?
-	if (chan->buf_used > chan->payload_size ) {
+	// Got enough to send packet and we are allowed to output data
+	if (chan->buf_used > chan->payload_size && global_state->output_payload ) {
 		// Ensure a MPEG Audio frame starts here
 		// this makes problems with programmes like "Radio Bob!" (44100 kHz, 256 kBit/s bitrate)
 		// if (chan->buf_ptr[0] != 0xFF) {
@@ -562,9 +574,10 @@ static unsigned long int extract_pes_payload( unsigned char *pes_ptr, size_t pes
 					output_logmessage("write_streamdata: Error during write: %s, Exiting.\n", strerror(errno)); 
 					/* Not ready */
 					Interrupted = 1; 
-					exit(1);
+					return -1; 
 				} else if (0 == retval) {
-					output_logmessage("write_streamdata: EOF on STDOUT(?) during write.\n"); 
+					// output_logmessage("write_streamdata: EOF on STDOUT(?) during write.\n"); 
+					// return -1; 
 				}
 				chan->bytes_written_nt += chan->payload_size;
 				bytes_written += chan->payload_size;
@@ -572,18 +585,29 @@ static unsigned long int extract_pes_payload( unsigned char *pes_ptr, size_t pes
 				uint32_t first_write = SHOUTCAST_METAINT - chan->bytes_written_nt;
 				uint32_t second_write = chan->payload_size - first_write; 
 				uint16_t bytes = 0;
+				uint16_t written; 
 				char streamtitle[STR_BUF_SIZE]; 
-				snprintf(streamtitle, STR_BUF_SIZE -1, "StreamTitle='%s';", channel_map[18]->title);
+				snprintf(streamtitle, STR_BUF_SIZE -1, "StreamTitle='%s';", global_state->stream_title);
 				bytes = ((strlen(streamtitle))>>4) + 1; /* Shift right by 4 bit => Divide by 16, and add 1 to get minimum possible length */
-				bytes_written += write(STDOUT, (char*)chan->buf, first_write); 
+				written = write(STDOUT, (char*)chan->buf, first_write); 
+				bytes_written += written; 
+				if (written < 0) {
+					output_logmessage("write_streamdata: Error on STDOUT(?) during write.\n"); 
+					return -1;
+				}
 				bytes_written += write(STDOUT, &bytes, 1);
 				bytes_written += write(STDOUT, streamtitle, bytes<<4);
-				bytes_written += write(STDOUT, (char*)(chan->buf + first_write), second_write);
+				written += write(STDOUT, (char*)(chan->buf + first_write), second_write);
+				bytes_written += written;
+				if (bytes_written < 0) {
+					output_logmessage("write_streamdata: Error on STDOUT(?) during write.\n"); 
+					return -1;
+				}
 				chan->bytes_written_nt = second_write;
 			}
 		} else {
 			if ( write(STDOUT, (char*)chan->buf, chan->payload_size) <= 0) {
-				 exit(1);
+				return -1; 
 			}
 			bytes_written += chan->payload_size;
 			chan->bytes_written_nt += chan->payload_size;
@@ -601,48 +625,44 @@ static unsigned long int extract_pes_payload( unsigned char *pes_ptr, size_t pes
 	return bytes_written; 
 }
 
-/* This is a helper function for the processing loop of process_ts_packets 
+/* This is a helper function for the processing loop of process_ts_packet
  * it resets the the data collector if the pid changes */
 void pid_change() {
-	memset(eit_table4e_active, 0, sizeof(section_aggregate_t)); 
+	memset(eit_table, 0, sizeof(section_aggregate_t)); 
 }
 
-/* This is the main processing loop for the incoming stream data */
-void process_ts_packets( int fd_dvr )
-{
+/* In FILTER mode (non-cgi-mode) we simply start with a file descriptor. This is a 
+ * leftover from the original code, because in our case it is always stdin 
+ * This is the main processing loop for filter mode that runs until we have no 
+ * longer data on stdin (read returns 0) or we caught a signal (Interrupted > 0) */
+
+void filter_global_loop(int fd_dvr) {
 	unsigned char buf[TS_PACKET_SIZE];
-	unsigned char* pes_ptr=NULL;
-	unsigned int pid=0;
-	size_t pes_len;
 	int bytes_read;
-	long int bytes_streamed_read = 0; 
-	long int bytes_streamed_write = 0; 
 	const long int mb_conversion = 1024 * 1024;
-	uint16_t ts_sync_error = 0; 
-	const uint16_t max_sync_errors = 5; 
+	const uint16_t max_sync_errors = 5;
 	
-	while ( !Interrupted ) {
-		
-		bytes_read = read(fd_dvr,buf,TS_PACKET_SIZE);
-		bytes_streamed_read += bytes_read; 
-		if (bytes_read == 0) {
-			output_logmessage("process_ts_packets: read from stream %.2f MB, wrote %.2f MB, no bytes left to read - EOF. Exiting.\n", 
-			                  (float)bytes_streamed_read/mb_conversion, (float)bytes_streamed_write/mb_conversion);
-			break; 
-		}
+	while (! Interrupted ) {
+		bytes_read = read(fd_dvr, buf, TS_PACKET_SIZE);
+		global_state->bytes_streamed_read += bytes_read;
+        if (bytes_read == 0) {
+            output_logmessage("filter_global_loop: read from stream %.2f MB, wrote %.2f MB, no bytes left to read - EOF. Exiting.\n",
+                              (float)global_state->bytes_streamed_read/mb_conversion, (float)global_state->bytes_streamed_write/mb_conversion);
+            break;
+        }
 		if (bytes_read > 0 && bytes_read < TS_PACKET_SIZE) {
-			output_logmessage("process_ts_packets: short read, only got %d bytes, instead of %d, trying to resync\n", bytes_read, TS_PACKET_SIZE);
+			output_logmessage("filter_global_loop: short read, only got %d bytes, instead of %d, trying to resync\n", bytes_read, TS_PACKET_SIZE);
 			// trying to start over, to get a full read by waiting a little bit (150 ms)
 			poll(NULL, 0, 150);
 			/* Throw rest of the not read bytes away by trying to read it in the buffer and jump back to read full mpeg frames */
 			bytes_read = read(fd_dvr,buf,TS_PACKET_SIZE - bytes_read);
-			ts_sync_error += 1;
-			if (ts_sync_error > max_sync_errors) {
+			global_state->ts_sync_error += 1;
+			if (global_state->ts_sync_error > max_sync_errors) {
 				break; 
 			}
 			continue;
 		} else if (bytes_read < 0) {
-			output_logmessage("process_ts_packets: streamed %ld bytes, read returned an error: %s, exiting.\n", bytes_streamed_read, strerror(errno)); 
+			output_logmessage("filter_global_loop: streamed %ld bytes, read returned an error: %s, exiting.\n", global_state->bytes_streamed_read, strerror(errno)); 
 			break;
 		}
 		// Check the sync-byte
@@ -651,11 +671,11 @@ void process_ts_packets( int fd_dvr )
 			int did_read = 0; 
 			/* Check whether we are completly lost 
 			 * (got no synchronisation on transport-stream start after max_sync_errors tries) */
-			ts_sync_error += 1; 
-			if (ts_sync_error > max_sync_errors) {
-				output_logmessage("process_ts_packets: After reading %.2f MB and writing %.2f, " \
+			global_state->ts_sync_error += 1; 
+			if (global_state->ts_sync_error > max_sync_errors) {
+				output_logmessage("filter_global_loop: After reading %.2f MB and writing %.2f, " \
 				                  "Lost synchronisation (sync loss counter of %d exceeded) - Exiting\n", 
-					(float)bytes_streamed_read/mb_conversion, (float)bytes_streamed_write/mb_conversion, max_sync_errors);
+					(float)global_state->bytes_streamed_read/mb_conversion, (float)global_state->bytes_streamed_write/mb_conversion, max_sync_errors);
 				return; 
 			}
 			for (i = 1; i < TS_PACKET_SIZE; i++) {
@@ -668,139 +688,338 @@ void process_ts_packets( int fd_dvr )
 			}
 			/* No 0x47 found, most likly we are lost */
 			if (0 == did_read) {
-				output_logmessage("process_ts_packets: After reading %.2f MB and writing %.2f, " \
+				output_logmessage("filter_global_loop: After reading %.2f MB and writing %.2f, " \
 				                  "Lost synchronisation - skipping full block (Lost counter %d, aborting at %d) \n", 
-					(float)bytes_streamed_read/mb_conversion, (float)bytes_streamed_write/mb_conversion, ts_sync_error, max_sync_errors);
+					(float)global_state->bytes_streamed_read/mb_conversion, (float)global_state->bytes_streamed_write/mb_conversion, 
+					global_state->ts_sync_error, max_sync_errors);
 			} else {
-				output_logmessage("process_ts_packets: After reading %.2f MB and writing %.2f, " \
+				output_logmessage("filter_global_loop: After reading %.2f MB and writing %.2f, " \
 				                  " Lost synchronisation - skipping %d bytes (Lost counter %d, aborting at %d) \n", 
-					(float)bytes_streamed_read/mb_conversion, (float)bytes_streamed_write/mb_conversion, did_read, ts_sync_error, max_sync_errors);
+					(float)global_state->bytes_streamed_read/mb_conversion, (float)global_state->bytes_streamed_write/mb_conversion, 
+					did_read, global_state->ts_sync_error, max_sync_errors);
 			}
 			continue; /* read next block */
 		}
-		
-		// Get the PID of this TS packet
-		pid = TS_PACKET_PID(buf);
-		
-		// Transport error?
-		if ( TS_PACKET_TRANS_ERROR(buf) ) {
-			output_logmessage("process_ts_packets: Warning, transport error in PID %d.\n", pid);
-			if (channel_map[ pid ]) {
-				channel_map[ pid ]->synced = 0;
-				channel_map[ pid ]->buf_used = 0;
+		process_ts_packet(buf);
+	}
+	return; 
+}
+
+/* In CGI mode we are called by libcurl using the libcurl CURLOPT_WRITEFUNCTION callback function 
+ * we don't know how much data we get at once, but we've to handle it completly bevor going back. 
+ * This is no big deal because this code is much faster then needed for processing */
+
+struct memory_struct {
+  unsigned char *memory;
+  size_t size;
+};
+
+/* libcurls write callback, set with CURLOPT_WRITEFUNCTION if in CGI mode */
+/* the code is inspired by an example implementation given on libcurls webpage */
+
+static size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp)
+{
+    size_t realsize = size * nmemb;
+	size_t already_processed = 0; 
+	char header[STR_BUF_SIZE]; 
+    struct memory_struct *mem = (struct memory_struct *)userp;
+	const long int mb_conversion = 1024 * 1024;
+
+	/* process the data we've stored from the last run? */
+	unsigned char * buf = contents;
+	
+	/* Do we have data from the last run that we must use for the next one? */
+	if (mem->size > 0) {
+		/* We have a remaining leftover from last curl call. Make a call with a filled up buffer first */
+		memcpy(mem->memory + (mem->size), buf, TS_PACKET_SIZE - mem->size); 
+		already_processed = TS_PACKET_SIZE - mem->size; 
+		global_state->bytes_streamed_read += TS_PACKET_SIZE - mem->size;
+		buf += TS_PACKET_SIZE - mem->size;
+		if (TS_PACKET_SYNC_BYTE(mem->memory) == 0x47) {
+			process_ts_packet(mem->memory); 
+		} else {
+			output_logmessage("write_callback (curl): got short block, skipped data at block position %d (%d)\n", 0, global_state->bytes_streamed_read); 
+			/* TODO resync? */
+		}		
+		mem->size = 0;
+	}
+	while (already_processed < realsize && already_processed + TS_PACKET_SIZE <= realsize) {
+		if (TS_PACKET_SYNC_BYTE(buf) == 0x47) {
+			if (process_ts_packet(buf)) {
+				already_processed += TS_PACKET_SIZE; 
+				global_state->bytes_streamed_read += TS_PACKET_SIZE; 
+				buf += TS_PACKET_SIZE; 
+			} else {
+				/* an error occured */
+				already_processed = 0;
+				break; 
 			}
-			continue;
-		}			
-
-		// Scrambled?
-		if ( TS_PACKET_SCRAMBLING(buf) ) {
-			fprintf(stderr, "Warning: PID %d is scrambled.\n", pid);
-			continue;
-		}	
-
-		// Location of and size of PES payload
-		pes_ptr = &buf[4];
-		pes_len = TS_PACKET_SIZE - 4;
-
-		// Check for adaptation field?
-		if (TS_PACKET_ADAPTATION(buf)==0x1) {
-			// Payload only, no adaptation field
-		} else if (TS_PACKET_ADAPTATION(buf)==0x2) {
-			// Adaptation field only, no payload
-			continue;
-		} else if (TS_PACKET_ADAPTATION(buf)==0x3) {
-			// Adaptation field AND payload
-			pes_ptr += (TS_PACKET_ADAPT_LEN(buf) + 1);
-			pes_len -= (TS_PACKET_ADAPT_LEN(buf) + 1);
+		} else {
+			/* TODO resync? */
+			output_logmessage("write_callback (curl): Skipped data at block position %d, realsize %d (%.2f MB read)\n", already_processed, realsize, (float)global_state->bytes_streamed_read/mb_conversion); 
+			already_processed += TS_PACKET_SIZE;
+			buf += TS_PACKET_SIZE;
 		}
-		
-		// Check we know about the payload
-		if (channel_map[ pid ]) {
-			// Continuity check
-			ts_continuity_check( channel_map[ pid ], TS_PACKET_CONT_COUNT(buf) );
-			enum_channel_type channel_type = channel_map[ pid ]->channel_type; 
-			ts_sync_error = 0; 
-			switch (channel_type) {
-				case CHANNEL_TYPE_PAT: 
-					extract_pat_payload(pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
-					pid_change(); 
-					break;
-				case CHANNEL_TYPE_EIT: 
-					extract_eit_payload ( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
-					ts_sync_error = 0; /* no pid_change() because it resets the EIT stuff */
-					break;
-				case CHANNEL_TYPE_SDT: 
-					extract_sdt_payload ( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
-					pid_change(); 
-					break;
-				case CHANNEL_TYPE_PMT: 
-					extract_pmt_payload ( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
-					pid_change();
-					break;
-				case CHANNEL_TYPE_PAYLOAD: 
-					bytes_streamed_write += extract_pes_payload( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
-					pid_change();
-					break; 
-				default: 
-#ifdef DEBUG
-					fprintf(stderr, "Warning: don't know anything about PID %d.\n", pid);
-#endif 
-					pid_change();
-					break;
+	} 
+	/* in some cases curl fetches an "non-even amount" of mpeg-ts data, means we get some remaining data
+        * we save it here for later processing. "already_processed != real_size" is the special case where a remainder of 
+		* a 2nd read is exactly the right size. 
+		* (e.g. libcurl reads the maximum of 16384 byte, remaining 28 byte, next read 160 byte == 188 byte == full mpeg ts frame */
+	if (already_processed > 0 && already_processed < realsize && already_processed + TS_PACKET_SIZE > realsize && ( already_processed != realsize) ) {
+		// output_logmessage("DEBUG: uneven amount remaining: %d bytes (curl called us with %d bytes)\n", realsize - already_processed, realsize); 
+		memcpy(mem->memory, buf, realsize - already_processed);
+		mem->size = realsize - already_processed; 
+		already_processed += realsize - already_processed; 
+	}
+	if (!global_state->output_payload) {
+		/* not all data items were available, check wether they are available now. 
+		 * output the header and START playing audio */
+		if (global_state->station_name 
+			&& strlen(global_state->station_name) > 0 
+			&& global_state->br > 0 
+			&& global_state->sr > 0) {
+			if (shoutcast) {
+				snprintf(header, STR_BUF_SIZE, "Content-Type: audio/mpeg\n" \
+						"Connection: close\n" \
+						"icy-br: %d\n" \
+						"icy-sr: %d\n" \
+						"icy-name: %s\n" \
+						"icy-metaint: 8192\n\n",
+						global_state->br, global_state->sr, global_state->station_name); 
+			} else {
+				snprintf(header, STR_BUF_SIZE, "Content-Type: audio/mpeg\n" \
+						"Connection: close\n\n"); 
 			}
+			write(1, header, strlen(header)); 
+			global_state->output_payload = 1; 
+		}
+	}	
+	if (Interrupted) {
+		output_logmessage("write_callback (curl): Got signal %d after fetching %.2f MB and writing %.2f MB. Exiting.\n", Interrupted, 
+			(float)global_state->bytes_streamed_read/mb_conversion, (float)global_state->bytes_streamed_write/mb_conversion ); 
+		already_processed = 0;
+	}
+    return already_processed;
+}
+
+void start_curl_download() {
+
+	/* exactly one full ts frame can be stored */
+    struct memory_struct chunk;
+    chunk.size = 0;
+    chunk.memory = calloc(1, TS_PACKET_SIZE);
+	char user_agent_string[STR_BUF_SIZE]; 
+	char url[STR_BUF_SIZE]; 
+
+    curl_global_init(CURL_GLOBAL_ALL);
+    CURL *curl = curl_easy_init();
+    if (! curl) {
+        output_logmessage("Cannot initialize libcurl at all, exiting\n");
+        exit(1);
+    }
+	/* prepare headers for accessing tvheadend */
+    struct curl_slist *header = NULL;
+	/* We only want mpeg transport */
+    header = curl_slist_append(header, "Accept: audio/mp2t");
+	if (getenv("HTTP_USER_AGENT")) {
+		snprintf(user_agent_string, STR_BUF_SIZE, "User-Agent: ts2shout (%s)", getenv("HTTP_USER_AGENT")); 
+	} else {
+		snprintf(user_agent_string, STR_BUF_SIZE, "User-Agent: ts2shout");
+	}
+    header = curl_slist_append(header, user_agent_string);
+    int res = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header);
+	/* generate URI (TVHEADEND and PROGRAMMNO was checked by calling function) */
+	if (getenv("REDIRECT_TVHEADEND")) {
+		if (strncmp(getenv("REDIRECT_TVHEADEND"), "http://", 7) == 0) {
+			snprintf(url, STR_BUF_SIZE, "%s/%s", getenv("REDIRECT_TVHEADEND"), getenv("REDIRECT_PROGRAMMNO")); 
+		} else {
+			snprintf(url, STR_BUF_SIZE, "http://%s/%s", getenv("REDIRECT_TVHEADEND"), getenv("REDIRECT_PROGRAMMNO"));
+		}
+	} else {
+		if (strncmp(getenv("TVHEADEND"), "http://", 7) == 0) {
+			snprintf(url, STR_BUF_SIZE, "%s/%s", getenv("TVHEADEND"), getenv("PROGRAMMNO")); 
+		} else {
+			snprintf(url, STR_BUF_SIZE, "http://%s/%s", getenv("TVHEADEND"), getenv("PROGRAMMNO"));
 		}
 	}
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
+	/* Set timeout to avoid hangin processes */
+	/* abort if slower than 2000 bytes/sec during 5 seconds */
+	curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 5L);
+	curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 2000L);
+    // curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+    res = curl_easy_perform(curl);
+    if(res != CURLE_OK) {
+        output_logmessage("curl_easy_perform() failed on %s: %s\n", 
+        url, curl_easy_strerror(res));
+    } else {
+        /* Do something */
+    }
+    /* cleanup curl stuff */
+    curl_easy_cleanup(curl);
+    free(chunk.memory);
+    curl_global_cleanup();
+    return; 
 }
 
 
+/* This function handles exactly one MPEG TS full frame of 188 bytes. It has to be checked before calling 
+ * whether a full frame of 188 byte has been received. process_ts_packet has to be called subsequently 
+ * with every frame, otherwise you'll get an out-of-sync / ts_continuity error */
+
+size_t process_ts_packet( unsigned char * buf )
+{
+	unsigned char* pes_ptr=NULL;
+	unsigned int pid=0;
+	size_t pes_len;
+	size_t streamed = 0; 
+	
+	// Get the PID of this TS packet
+	pid = TS_PACKET_PID(buf);
+		
+	// Transport error?
+	if ( TS_PACKET_TRANS_ERROR(buf) ) {
+		output_logmessage("process_ts_packet: Warning, transport error in PID %d.\n", pid);
+		if (channel_map[ pid ]) {
+			channel_map[ pid ]->synced = 0;
+			channel_map[ pid ]->buf_used = 0;
+		}
+		return 0;
+	}			
+
+	// Scrambled? (Should never happen)
+	if ( TS_PACKET_SCRAMBLING(buf) ) {
+		output_logmessage("process_ts_packet: Warning: PID %d is scrambled.\n", pid);
+		return 0;
+	}	
+
+	// Location of and size of PES payload
+	pes_ptr = &buf[4];
+	pes_len = TS_PACKET_SIZE - 4;
+	
+	// Check for adaptation field?
+	if (TS_PACKET_ADAPTATION(buf)==0x1) {
+		// Payload only, no adaptation field
+	} else if (TS_PACKET_ADAPTATION(buf)==0x2) {
+		// Adaptation field only, no payload
+		return 0;
+	} else if (TS_PACKET_ADAPTATION(buf)==0x3) {
+		// Adaptation field AND payload
+		pes_ptr += (TS_PACKET_ADAPT_LEN(buf) + 1);
+		pes_len -= (TS_PACKET_ADAPT_LEN(buf) + 1);
+	}
+		
+	// Check we know about the payload
+	if (channel_map[ pid ]) {
+		// Continuity check
+		ts_continuity_check( channel_map[ pid ], TS_PACKET_CONT_COUNT(buf) );
+		enum_channel_type channel_type = channel_map[ pid ]->channel_type; 
+		global_state->ts_sync_error = 0;	/* Reset global ts_sync_error counter */
+		switch (channel_type) {
+			case CHANNEL_TYPE_PAT: 
+				extract_pat_payload(pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
+				pid_change(); 
+				break;
+			case CHANNEL_TYPE_EIT: 
+				extract_eit_payload ( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
+				// global_state->ts_sync_error = 0; /* no pid_change() because it resets the EIT stuff */
+				break;
+			case CHANNEL_TYPE_SDT: 
+				extract_sdt_payload ( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
+				pid_change(); 
+				break;
+			case CHANNEL_TYPE_PMT: 
+				extract_pmt_payload ( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
+				pid_change();
+				break;
+			case CHANNEL_TYPE_PAYLOAD: 
+				streamed = extract_pes_payload( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
+				if (streamed < 0) {
+					/* cannot stream */
+					return 0; 
+				}
+				global_state->bytes_streamed_write += streamed;
+				pid_change();
+				break; 
+			default: 
+#ifdef DEBUG
+				fprintf(stderr, "Warning: don't know anything about PID %d.\n", pid);
+#endif 
+				pid_change();
+				break;
+		}
+	}
+	return TS_PACKET_SIZE; 
+}
 
 int main(int argc, char **argv)
 {
-	int fd_frontend=-1;
 	int fd_dvr=-1;
 	int i;
-	
 	
 	// Initialise data structures
 	for (i=0;i<MAX_PID_COUNT;i++) channel_map[i]=NULL;
 	for (i=0;i<MAX_CHANNEL_COUNT;i++) channels[i]=NULL;
-
-	eit_table4e_active = calloc(1, sizeof(section_aggregate_t));
+	eit_table = calloc(1, sizeof(section_aggregate_t));
+	global_state = calloc(1, sizeof(programm_info_t)); 
 	
-	// Parse command line arguments
-	parse_args( argc, argv );
+	/* Are we running as CGI programme? */
+	if (getenv("QUERY_STRING")) {
+		cgi_mode = 1;
+		if (getenv("MetaData") && strncmp(getenv("MetaData"), "1", 1) == 0) {
+			shoutcast = 1; 
+		} else if (getenv("REDIRECT_MetaData") && strncmp(getenv("REDIRECT_MetaData"), "1", 1) == 0) {
+			shoutcast = 1;
+		} else 	{
+			shoutcast = 0;
+		}
+	} else {
+		// Parse command line arguments
+		parse_args( argc, argv );
+	} 
 	init_structures();
-
-	// Open the DRV device
-	if((fd_dvr = open("/dev/stdin", O_RDONLY)) < 0){
-		perror("Failed to open STDIN device");
-		return -1;
-	}
-
-	output_logmessage("Streaming %s.\n", (shoutcast?"with shoutcast StreamTitles":"without shoutcast support, mpeg only"));
-
+	output_logmessage("Streaming %s in %s mode.\n", (shoutcast?"with shoutcast StreamTitles":"without shoutcast support, mpeg only"), 
+		(cgi_mode?"CGI":"FILTER"));
 	// Setup signal handlers
 	if (signal(SIGHUP, signal_handler) == SIG_IGN) signal(SIGHUP, SIG_IGN);
 	if (signal(SIGINT, signal_handler) == SIG_IGN) signal(SIGINT, SIG_IGN);
 	if (signal(SIGTERM, signal_handler) == SIG_IGN) signal(SIGTERM, SIG_IGN);
 
-	process_ts_packets( fd_dvr );
-	
-
-	if (Interrupted) {
-		output_logmessage("Caught signal %d - closing cleanly.\n", Interrupted);
-	}
-	
-	
+	if (! cgi_mode ) {
+		// Open the DRV device
+		if((fd_dvr = open("/dev/stdin", O_RDONLY)) < 0){
+			perror("Failed to open STDIN device");
+			return -1;
+		}
+		global_state->output_payload = 1; 
+		filter_global_loop( fd_dvr );
+		if (Interrupted) {
+				output_logmessage("Caught signal %d - closing cleanly.\n", Interrupted);
+		}
+	} else {
+		/* In CGI mode */
+		if (!getenv("REDIRECT_TVHEADEND") || ! getenv("REDIRECT_PROGRAMMNO")) {
+			if (!getenv("TVHEADEND") || ! getenv("PROGRAMMNO") ) {
+				output_logmessage("cgi_mode: Problems with environment, either REDIRECT_TVHEADEND / REDIRECT_PROGRAMMNO or TVHEADEND / PROGRAMMNO must be set. The following is the case: REDIRECT_TVHEADEND: %s, REDIRECT_PROGRAMMNO %s, TVHEADEND: %s, PROGRAMMNO: %s\n", 
+				getenv("REDIRECT_TVHEADEND"), getenv("REDIRECT_PROGRAMMNO"), getenv("TVHEADEND"), getenv("PROGRAMMNO"));
+			} else {
+				start_curl_download();
+			}
+		} else {
+			start_curl_download();
+		}
+	}	
 	// Clean up
 	for (i=0;i<channel_count;i++) {
 		if (channels[i]->fd != -1) close(channels[i]->fd);
 		if (channels[i]->buf) free( channels[i]->buf );
 		free( channels[i] );
 	}
-	close(fd_dvr);
-	close(fd_frontend);
-
-	return(0);
+	if (! cgi_mode) {
+		close(fd_dvr);
+	}
+	exit(0);
 }
 

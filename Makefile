@@ -7,8 +7,8 @@ LDFLAGS=
 # DEBUG=-DDEBUG -g
 PREFIX=/usr/local
 
-ts2shout: ts2shout.o mpa_header.o util.o pes.o crc32.o
-	${CC} ${DEBUG} ${LDFLAGS} -o ts2shout ts2shout.o mpa_header.o util.o pes.o crc32.o
+ts2shout: ts2shout.o mpa_header.o util.o pes.o crc32.o 
+	${CC} ${DEBUG} ${LDFLAGS} -o ts2shout ts2shout.o mpa_header.o util.o pes.o crc32.o -lcurl
 ts2shout.o: ts2shout.c ts2shout.h config.h
 	${CC} ${DEBUG} ${CFLAGS} -c ts2shout.c
 mpa_header.o: mpa_header.c config.h mpa_header.h

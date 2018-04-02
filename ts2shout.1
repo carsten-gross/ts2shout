@@ -6,15 +6,21 @@
 .sp
 .B cat mpeg-transport.ts | ts2shout noshout > audio.mpeg
 .sp
+.B [Installation of ts2shout as cgi application] 
+.sp
 .SH DESCRIPTION
 .B ts2shout 
 is a classic unix filter program, further described on http://www.siski.de/~carsten/radio-streaming-squeezebox.html. 
 As a unix filter you can feed an audio mpeg transport stream directly into stdin of the application. It will 
 give you a shoutcast audio stream (makes only sense in conjunction with a web server) or an plain mpeg audio stream.
 .sp
+Another application is to use it as CGI (common gateway interface) application called directly from apache. Please see
+the accompaining documenation of the package. Wether CGI or filter mode is to be used is decided by the enviroment variable
+QUERY_STRING, if it is set it is assumed that it is a CGI application.
+.sp
 Normally
 .B ts2shout 
-is installed as a mod_ext_filter in an web server application like apache. For
+is installed as a mod_action in an web server application like apache. For
 test cases it is always possible to use it at the command prompt to manually
 convert an mpeg transport stream into native mpeg audio. You have to use
 the option \fB noshout \fR then.
@@ -25,9 +31,19 @@ Used as a webfilter it converts from MIME type audio/mp2t to audio/mpeg.
 .B noshout	
 write a native mpeg stream, not a shoutcast media stream
 
+.SH ENVIRONMENT
+.B QUERY_STRING
+if set it is assumed that we are called as CGI application. The behaviour of the application changes (autodetect MPEG parameters and station name and put it into HTTP headers). If you want even faster startup of your streaming, you should use the application in filter mode. 
+.sp
+.B TVHEADEND 
+gives the tvheadend URL for fetching the mpeg transport stream. In most cases it will be http://localhost:9981/stream/channelnumber
+.sp
+.B PROGRAMMNO
+gives the number of the tvheadend channelnumber. See the example given in README.md. 
+
 .SH BUGS
-Got the feedback that some streams are not working correctly. The streams from German public radio are working flawlessly.
+The whole mpeg transport handling stuff is kept "as minimal as possible" to keep the application small and understandable. 
  
 .SH "SEE ALSO"
-.BR apache2 (1), tvheadend (1), mpg123 (1)
+.BR apache2 (1), tvheadend (1), mpg123 (1), curl (1)
 

@@ -22,26 +22,13 @@
 
 */
 
-#ifndef _DVB_SHOUT_H
-#define _DVB_SHOUT_H
+#ifndef _TS2SHOUT_H
+#define _TS2SHOUT_H
 
 #include <stdint.h>
 
 #include "mpa_header.h"
 
-
-// Use by gethostname()
-#ifndef HOST_NAME_MAX
-#ifdef _POSIX_HOST_NAME_MAX
-#define HOST_NAME_MAX	_POSIX_HOST_NAME_MAX
-#else
-#define HOST_NAME_MAX	(256)
-#endif
-#endif
-
-#ifndef DOMAIN_NAME_MAX
-#define DOMAIN_NAME_MAX	(1024)
-#endif
 
 // The size of MPEG2 TS packets
 #define TS_PACKET_SIZE			188
@@ -56,7 +43,7 @@
 #define STR_BUF_SIZE			6000
 
 // Maximum allowed PID value
-#define RTP_MPEG_AUDIO_PT		14
+// #define RTP_MPEG_AUDIO_PT		14
 
 /* Shoutcast Interval to next metadata */
 #define SHOUTCAST_METAINT		8192
@@ -244,6 +231,19 @@ typedef struct dvbshout_channel_s {
 
 } dvbshout_channel_t;
 
+typedef struct programm_info_s {
+	uint8_t	info_available;				/* Information available */
+	uint8_t	output_payload;				/* Header with information is sent, therefore audiodata can be output (for CGI mode) */
+	char station_name[STR_BUF_SIZE];	/* Name of station (normally only a few bytes) */
+	char stream_title[STR_BUF_SIZE];	/* StreamTitle for shoutcast stream */
+	uint32_t br;						/* Bitrate of stream e.g. 320000 kBit/s			*/
+	uint32_t sr;						/* Streamrate of stream e.g. 48 kHz == 48000 Hz */
+    uint64_t bytes_streamed_read;		/* Total bytes read from stream */
+    uint64_t bytes_streamed_write;		/* Total bytes write to stdout/streamed to application/CGI */
+    uint16_t ts_sync_error;				/* Total global number of sync errors */
+
+} programm_info_t; 
+
 typedef struct section_aggregate_s {
 	uint8_t		buffer_valid;		/* Buffer is valid */
 	uint8_t		continuation;		/* A continued (EIT) information block is found */
@@ -256,11 +256,12 @@ typedef struct section_aggregate_s {
 /* crc32.c */
 uint32_t crc32 (unsigned char *data, int len); 
 
-/* In dvbshout.c */
+/* In ts2shout.c */
 void output_logmessage(const char *fmt, ... ); 
 extern int channel_count;
 extern dvbshout_channel_t *channel_map[MAX_PID_COUNT];
 extern dvbshout_channel_t *channels[MAX_CHANNEL_COUNT];
+size_t process_ts_packet(unsigned char *buf);
 
 /* In pes.c */
 unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, dvbshout_channel_t *chan);

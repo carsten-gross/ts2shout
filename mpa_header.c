@@ -35,6 +35,7 @@
 #include "mpa_header.h"
 #include "ts2shout.h"
 
+extern programm_info_t *global_state;
 
 #define MPA_MODE_STEREO		0
 #define MPA_MODE_JOINT		1
@@ -95,6 +96,9 @@ static void parse_header(mpa_header_t *mh, u_int32_t header)
 	if (mh->layer && mh->version) {
 		mh->bitrate = bitrate[mh->version-1][mh->layer-1][mh->bitrate_index];
 		mh->samplerate = samplerate[mh->version-1][mh->samplerate_index];
+		/* also set global stuff */
+		global_state->br = mh->bitrate; 
+		global_state->sr = mh->samplerate; 
 	} else {
 		mh->bitrate = 0;
 		mh->samplerate = 0;
