@@ -73,6 +73,9 @@ the Icy-MetaData header given in the http request.
 		# As many as you need
 		SetEnvIf REQUEST_URI "drs2$" PROGRAMMNO=913
 		SetEnvIf REQUEST_URI "drs3$" PROGRAMMNO=914
+		Options +ExecCGI
+		Action ts2shout /cgi-bin/ts2shout virtual
+		SetHandler ts2shout
 	&lt;/Location&gt;
 </pre>
 
