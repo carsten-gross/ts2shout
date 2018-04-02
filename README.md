@@ -57,7 +57,6 @@ the Icy-MetaData header given in the http request.
 		Allow from 172.16.0.0/24
 		Allow from ::1
 		Allow from 127.0.0.1
-		Allow from 2a02:8071:3280:24f0::/64
 		&lt;If "%{HTTP:Icy-MetaData} in {'1'}"&gt;
 			SetEnv "MetaData" "1"
 		&lt;/If&gt;
