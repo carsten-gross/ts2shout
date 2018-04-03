@@ -261,7 +261,14 @@ void output_logmessage(const char *fmt, ... );
 extern int channel_count;
 extern dvbshout_channel_t *channel_map[MAX_PID_COUNT];
 extern dvbshout_channel_t *channels[MAX_CHANNEL_COUNT];
-size_t process_ts_packet(unsigned char *buf);
+
+/* process_ts_packet returns the number of handled bytes, 0 or one of the two
+ * error codes. A soft error is logged and ignored if it happens spuriously, a 
+ * hard error leads to an immediate end of stream processing and an exit with an 
+ * appropriate log message. */
+#define TS_SOFT_ERROR -1
+#define TS_HARD_ERROR -2 
+int16_t process_ts_packet(unsigned char *buf);
 
 /* In pes.c */
 unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, dvbshout_channel_t *chan);

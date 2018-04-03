@@ -15,8 +15,8 @@ is read from stdin and it is filtered to stdout. Error and info messages are dir
 sterr. 
 
 The other mode is CGI (common gateway interface) mode. This avoids hasseling
-around with shoutcast like parameters (liky icy-sr, icy-br etc.) which are read
-directly from the mpeg transport stream and output in the corrosponding and
+around with shoutcast like parameters (like icy-sr, icy-br etc.) which are read
+directly from the mpeg transport stream and output in the corresponding and
 required header lines. To support this mode libcurl is used for accessing
 tvheadend. This means libcurl (and the corrosponding libcurl-dev package for
 compiling) is required for ts2shout to work. 

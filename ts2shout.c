@@ -425,12 +425,12 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 	return;
 }
 
-static unsigned long int extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, dvbshout_channel_t *chan, int start_of_pes ) 
+int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, dvbshout_channel_t *chan, int start_of_pes ) 
 {
 	unsigned char* es_ptr=NULL;
 	size_t es_len=0;
 	
-	unsigned long int bytes_written = 0; 	
+	int32_t bytes_written = 0; 	
 	
 	
 	// Start of a PES header?
@@ -573,11 +573,10 @@ static unsigned long int extract_pes_payload( unsigned char *pes_ptr, size_t pes
 				if ( retval < 0) {
 					output_logmessage("write_streamdata: Error during write: %s, Exiting.\n", strerror(errno)); 
 					/* Not ready */
-					Interrupted = 1; 
 					return -1; 
-				} else if (0 == retval) {
-					// output_logmessage("write_streamdata: EOF on STDOUT(?) during write.\n"); 
-					// return -1; 
+				} else if (0 == retval && chan->payload_size > 0) {
+					output_logmessage("write_streamdata: EOF on STDOUT(?) during write.\n"); 
+					return -1; 
 				}
 				chan->bytes_written_nt += chan->payload_size;
 				bytes_written += chan->payload_size;
@@ -585,28 +584,43 @@ static unsigned long int extract_pes_payload( unsigned char *pes_ptr, size_t pes
 				uint32_t first_write = SHOUTCAST_METAINT - chan->bytes_written_nt;
 				uint32_t second_write = chan->payload_size - first_write; 
 				uint16_t bytes = 0;
-				uint16_t written; 
+				uint16_t written = 0; 
 				char streamtitle[STR_BUF_SIZE]; 
 				snprintf(streamtitle, STR_BUF_SIZE -1, "StreamTitle='%s';", global_state->stream_title);
 				bytes = ((strlen(streamtitle))>>4) + 1; /* Shift right by 4 bit => Divide by 16, and add 1 to get minimum possible length */
-				written = write(STDOUT, (char*)chan->buf, first_write); 
-				bytes_written += written; 
-				if (written < 0) {
-					output_logmessage("write_streamdata: Error on STDOUT(?) during write.\n"); 
-					return -1;
+				if (first_write > 0) {
+					written = write(STDOUT, (char*)chan->buf, first_write); 
+					if (written <= 0) {
+						if (written < 0) {
+							output_logmessage("write_streamdata: Error during write: %s, Exiting.\n", strerror(errno));
+						} else {
+							output_logmessage("write_streamdata: Error or EOF on STDOUT(?) during write.\n"); 
+						}
+						return -1;
+					}
+					bytes_written += written; 
+					chan->bytes_written_nt += first_write;
 				}
 				bytes_written += write(STDOUT, &bytes, 1);
 				bytes_written += write(STDOUT, streamtitle, bytes<<4);
-				written += write(STDOUT, (char*)(chan->buf + first_write), second_write);
-				bytes_written += written;
-				if (bytes_written < 0) {
-					output_logmessage("write_streamdata: Error on STDOUT(?) during write.\n"); 
-					return -1;
+				if (second_write > 0) {
+					written = write(STDOUT, (char*)(chan->buf + first_write), second_write);
+					if (written <= 0) {
+						if (written < 0) {
+							output_logmessage("write_streamdata: Error during write: %s, Exiting.\n", strerror(errno));
+						} else {
+							output_logmessage("write_streamdata: Error or EOF on STDOUT(?) during write.\n"); 
+						}
+						return -1;
+					}
+					bytes_written += written;	
+					/* Reset the Shoutcastcounter */
+					chan->bytes_written_nt = second_write;
 				}
-				chan->bytes_written_nt = second_write;
 			}
 		} else {
-			if ( write(STDOUT, (char*)chan->buf, chan->payload_size) <= 0) {
+			if (chan->payload_size > 0 && write(STDOUT, (char*)chan->buf, chan->payload_size) <= 0) {
+				output_logmessage("write_streamdata: Error or EOF on STDOUT(?) during write.\n");
 				return -1; 
 			}
 			bytes_written += chan->payload_size;
@@ -700,13 +714,16 @@ void filter_global_loop(int fd_dvr) {
 			}
 			continue; /* read next block */
 		}
-		process_ts_packet(buf);
+		/* Bail out on hard errors */
+		if (process_ts_packet(buf) == TS_HARD_ERROR) {
+			break; 
+		}
 	}
 	return; 
 }
 
 /* In CGI mode we are called by libcurl using the libcurl CURLOPT_WRITEFUNCTION callback function 
- * we don't know how much data we get at once, but we've to handle it completly bevor going back. 
+ * we don't know how much data we get at once, but we've to handle it completly before going back. 
  * This is no big deal because this code is much faster then needed for processing */
 
 struct memory_struct {
@@ -736,7 +753,10 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 		global_state->bytes_streamed_read += TS_PACKET_SIZE - mem->size;
 		buf += TS_PACKET_SIZE - mem->size;
 		if (TS_PACKET_SYNC_BYTE(mem->memory) == 0x47) {
-			process_ts_packet(mem->memory); 
+			if (process_ts_packet(mem->memory) == TS_HARD_ERROR) {
+				already_processed = 0;
+				goto write_error;
+			}
 		} else {
 			output_logmessage("write_callback (curl): got short block, skipped data at block position %d (%d)\n", 0, global_state->bytes_streamed_read); 
 			/* TODO resync? */
@@ -745,14 +765,14 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 	}
 	while (already_processed < realsize && already_processed + TS_PACKET_SIZE <= realsize) {
 		if (TS_PACKET_SYNC_BYTE(buf) == 0x47) {
-			if (process_ts_packet(buf)) {
+			if ( process_ts_packet(buf) != TS_HARD_ERROR ) {
 				already_processed += TS_PACKET_SIZE; 
 				global_state->bytes_streamed_read += TS_PACKET_SIZE; 
 				buf += TS_PACKET_SIZE; 
 			} else {
 				/* an error occured */
 				already_processed = 0;
-				break; 
+				goto write_error; 
 			}
 		} else {
 			/* TODO resync? */
@@ -795,7 +815,9 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 		}
 	}	
 	if (Interrupted) {
-		output_logmessage("write_callback (curl): Got signal %d after fetching %.2f MB and writing %.2f MB. Exiting.\n", Interrupted, 
+write_error: 
+		output_logmessage("write_callback (curl): %s after fetching %.2f MB and writing %.2f MB. Exiting.\n", 
+			((Interrupted >0 && Interrupted <=32)?strsignal(Interrupted):"streaming error"), 
 			(float)global_state->bytes_streamed_read/mb_conversion, (float)global_state->bytes_streamed_write/mb_conversion ); 
 		already_processed = 0;
 	}
@@ -851,9 +873,12 @@ void start_curl_download() {
 	curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 2000L);
     // curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
     res = curl_easy_perform(curl);
-    if(res != CURLE_OK) {
+	// We almost always get the write error during our writes, because we tell
+	// libcurl that we want to stop download by return "0" in the write callback
+	// We don't need the errors in the log
+    if( (res != CURLE_OK) && (res != CURLE_WRITE_ERROR) ) {
         output_logmessage("curl_easy_perform() failed on %s: %s\n", 
-        url, curl_easy_strerror(res));
+	        url, curl_easy_strerror(res));
     } else {
         /* Do something */
     }
@@ -869,12 +894,12 @@ void start_curl_download() {
  * whether a full frame of 188 byte has been received. process_ts_packet has to be called subsequently 
  * with every frame, otherwise you'll get an out-of-sync / ts_continuity error */
 
-size_t process_ts_packet( unsigned char * buf )
+int16_t process_ts_packet( unsigned char * buf )
 {
 	unsigned char* pes_ptr=NULL;
 	unsigned int pid=0;
 	size_t pes_len;
-	size_t streamed = 0; 
+	int32_t streamed = 0; 
 	
 	// Get the PID of this TS packet
 	pid = TS_PACKET_PID(buf);
@@ -886,13 +911,13 @@ size_t process_ts_packet( unsigned char * buf )
 			channel_map[ pid ]->synced = 0;
 			channel_map[ pid ]->buf_used = 0;
 		}
-		return 0;
+		return TS_SOFT_ERROR;
 	}			
 
 	// Scrambled? (Should never happen)
 	if ( TS_PACKET_SCRAMBLING(buf) ) {
 		output_logmessage("process_ts_packet: Warning: PID %d is scrambled.\n", pid);
-		return 0;
+		return TS_SOFT_ERROR;
 	}	
 
 	// Location of and size of PES payload
@@ -904,7 +929,7 @@ size_t process_ts_packet( unsigned char * buf )
 		// Payload only, no adaptation field
 	} else if (TS_PACKET_ADAPTATION(buf)==0x2) {
 		// Adaptation field only, no payload
-		return 0;
+		return TS_SOFT_ERROR;
 	} else if (TS_PACKET_ADAPTATION(buf)==0x3) {
 		// Adaptation field AND payload
 		pes_ptr += (TS_PACKET_ADAPT_LEN(buf) + 1);
@@ -938,7 +963,7 @@ size_t process_ts_packet( unsigned char * buf )
 				streamed = extract_pes_payload( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
 				if (streamed < 0) {
 					/* cannot stream */
-					return 0; 
+					return TS_HARD_ERROR; 
 				}
 				global_state->bytes_streamed_write += streamed;
 				pid_change();
