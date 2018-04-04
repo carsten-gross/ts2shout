@@ -12,7 +12,7 @@
 .B ts2shout 
 is a classic unix filter program, further described on http://www.siski.de/~carsten/radio-streaming-squeezebox.html. 
 As a unix filter you can feed an audio mpeg transport stream directly into stdin of the application. It will 
-give you a shoutcast audio stream (makes only sense in conjunction with a web server) or an plain mpeg audio stream.
+give you a shoutcast audio stream (makes only sense in conjunction with a web server) or a plain mpeg audio stream.
 .sp
 Another application is to use it as CGI (common gateway interface) application called directly from apache. Please see
 the accompaining documenation of the package. Wether CGI or filter mode is to be used is decided by the enviroment variable
@@ -32,6 +32,8 @@ Used as a webfilter it converts from MIME type audio/mp2t to audio/mpeg.
 write a native mpeg stream, not a shoutcast media stream
 
 .SH ENVIRONMENT
+The Environment variables determine whether the application runs in filter or in CGI mode.
+.sp
 .B QUERY_STRING
 if set it is assumed that we are called as CGI application. The behaviour of the application changes (autodetect MPEG parameters and station name and put it into HTTP headers). If you want even faster startup of your streaming, you should use the application in filter mode. 
 .sp
@@ -40,6 +42,9 @@ gives the tvheadend URL for fetching the mpeg transport stream. In most cases it
 .sp
 .B PROGRAMMNO
 gives the number of the tvheadend channelnumber. See the example given in README.md. 
+.sp
+.B MetaData
+If set to 1 the output should be done shoutcast compatible. This flag should only be set if the "Icy-MetaData: 1" header is set in the HTTP request.
 
 .SH BUGS
 The whole mpeg transport handling stuff is kept "as minimal as possible" to keep the application small and understandable. 
