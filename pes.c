@@ -30,12 +30,8 @@
 #include <string.h>
 
 #include "ts2shout.h"
-#include "config.h"
 
-
-
-
-unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, dvbshout_channel_t *chan) 
+unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, ts2shout_channel_t *chan) 
 {
 	size_t pes_len = PES_PACKET_LEN(buf);
 	size_t pes_header_len = PES_PACKET_HEAD_LEN(buf);

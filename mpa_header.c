@@ -2,6 +2,7 @@
  *  MPEG Audio Header Parser
  *
  *  Copyright (C) 2006 Nicholas J. Humfrey
+ *  Copyright (C) 2018 Carsten Groß
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -27,8 +28,6 @@
  */
  
  
-#include "config.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 

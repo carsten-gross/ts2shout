@@ -9,11 +9,11 @@ PREFIX=/usr/local
 
 ts2shout: ts2shout.o mpa_header.o util.o pes.o crc32.o 
 	${CC} ${DEBUG} ${LDFLAGS} -o ts2shout ts2shout.o mpa_header.o util.o pes.o crc32.o -lcurl
-ts2shout.o: ts2shout.c ts2shout.h config.h
+ts2shout.o: ts2shout.c ts2shout.h
 	${CC} ${DEBUG} ${CFLAGS} -c ts2shout.c
-mpa_header.o: mpa_header.c config.h mpa_header.h
+mpa_header.o: mpa_header.c mpa_header.h
 	${CC} ${DEBUG} ${CFLAGS} -c mpa_header.c
-pes.o: pes.c config.h
+pes.o: pes.c 
 	${CC} ${DEBUG} ${CFLAGS} -c pes.c
 util.o: util.c
 	${CC} ${DEBUG} ${CFLAGS} -c util.c

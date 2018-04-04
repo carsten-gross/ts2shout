@@ -39,19 +39,16 @@
 #include <curl/curl.h>
 
 #include "ts2shout.h"
-#include "config.h"
 
-#define STDOUT 1 
-
-int Interrupted=0;    /* Playing interrupted by signal? */
-int channel_count=0;  /* Current listen channel count */
+int Interrupted=0;        /* Playing interrupted by signal? */
+int channel_count=0;      /* Current listen channel count */
 
 uint8_t shoutcast=1;      /* Send shoutcast headers? */
-uint8_t	logformat=1;	  /* Apache compatible output format */
-uint8_t	cgi_mode=0;	      /* Are we running as CGI programme? This is set if there is QUERY_STRING set in the environment */ 
+uint8_t	logformat=1;      /* Apache compatible output format */
+uint8_t	cgi_mode=0;       /* Are we running as CGI programme? This is set if there is QUERY_STRING set in the environment */ 
 
-dvbshout_channel_t *channel_map[MAX_PID_COUNT];
-dvbshout_channel_t *channels[MAX_CHANNEL_COUNT];
+ts2shout_channel_t *channel_map[MAX_PID_COUNT];
+ts2shout_channel_t *channels[MAX_CHANNEL_COUNT];
 
 /* Structure that keeps track of connected EIT frames */
 section_aggregate_t *eit_table;
@@ -113,7 +110,7 @@ void output_logmessage(const char *fmt, ... ) {
 	return; 
 }
 
-static void ts_continuity_check( dvbshout_channel_t *chan, int ts_cc ) 
+static void ts_continuity_check( ts2shout_channel_t *chan, int ts_cc ) 
 {
 	if (chan->continuity_count != ts_cc) {
 	
@@ -131,7 +128,7 @@ static void ts_continuity_check( dvbshout_channel_t *chan, int ts_cc )
 }
 
 
-static void extract_pat_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout_channel_t *chan, int start_of_pes ) {
+static void extract_pat_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes ) {
 	unsigned char* start = NULL;
 	start = pes_ptr + start_of_pes; 
 #ifdef DEBUG
@@ -160,7 +157,7 @@ static void extract_pat_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 	
 }
 
-static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout_channel_t *chan, int start_of_pes ) {
+static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes ) {
 	unsigned char* start = NULL;
 	start = pes_ptr + start_of_pes; 
 #ifdef DEBUG
@@ -201,7 +198,7 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 	}
 }
 
-static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout_channel_t *chan, int start_of_pes ) {
+static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes ) {
     unsigned char* start = NULL;
     start = pes_ptr + start_of_pes;
 	/* SDT can use most of the PMT stuff */
@@ -214,7 +211,7 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 		PMT_LAST_SECTION_NUMBER(start));
 #endif 
 	unsigned char * description_offset = SDT_FIRST_DESCRIPTOR(start);
-	if (strlen(chan->name) == 0) {
+	if (strlen(global_state->station_name) == 0) {
 		if (crc32(start, PMT_SECTION_LENGTH(start) + 3) != 0) {
 #ifdef DEBUG
 			fprintf(stderr, "SDT: crc32 does not match, calculated %d, expected 0\n", crc32(start, PMT_SECTION_LENGTH(start) + 3)); 
@@ -242,8 +239,6 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 				if (strlen(service_name) > 0) {
 					/* Yes, we want to get information about the programme */
 					output_logmessage("SDT: Stream is station %s from network %s.\n", service_name, provider_name);
-					strncpy(chan->name, service_name, STR_BUF_SIZE);
-					/* TODO Make this twice for the time being */
 					strncpy(global_state->station_name, service_name, STR_BUF_SIZE); 
 				}
 			}
@@ -252,7 +247,7 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 	return;
 }
 
-static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout_channel_t *chan, int start_of_pes )
+static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes )
 {
 	unsigned char* start = NULL;
 	char short_description[STR_BUF_SIZE]; 
@@ -406,11 +401,9 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 					/* Sonst nur short description */
 					snprintf(tmp_title, STR_BUF_SIZE - 1, "%s", short_description);
 				}
-				if (0 != strcmp(tmp_title, chan->title)) {
+				if (0 != strcmp(tmp_title, global_state->stream_title)) {
 					// It's needed in iso8859-1 for StreamTitle, but in UTF-8 for logging
 					unsigned char utf8_message[STR_BUF_SIZE];
-					strcpy(chan->title, tmp_title);
-					/* TODO make this twice for the time being */
 					strcpy(global_state->stream_title, tmp_title); 
 					output_logmessage("EIT: Current transmission `%s'\n", utf8((unsigned char*)short_description, utf8_message)); 
 				}
@@ -425,7 +418,7 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, dvbshout
 	return;
 }
 
-int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, dvbshout_channel_t *chan, int start_of_pes ) 
+int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes ) 
 {
 	unsigned char* es_ptr=NULL;
 	size_t es_len=0;
@@ -568,18 +561,20 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, dvbshout_ch
 		/* see documentation: https://cast.readme.io/docs/icy */
 		if (shoutcast) {
 			if (chan->payload_size + chan->bytes_written_nt <= SHOUTCAST_METAINT) {
-				int retval = write(STDOUT, (char*)chan->buf, chan->payload_size); 
-				/* No metaint required in this output */
-				if ( retval < 0) {
-					output_logmessage("write_streamdata: Error during write: %s, Exiting.\n", strerror(errno)); 
-					/* Not ready */
-					return -1; 
-				} else if (0 == retval && chan->payload_size > 0) {
-					output_logmessage("write_streamdata: EOF on STDOUT(?) during write.\n"); 
-					return -1; 
+				if (chan->payload_size > 0) {
+					if (! fwrite((char*)chan->buf, chan->payload_size, 1, stdout) ) {
+						if ( ferror(stdout)) {
+							output_logmessage("write_streamdata: Error during write: %s, Exiting.\n", strerror(errno)); 
+							/* Not ready */
+							return -1; 
+						} else {
+							output_logmessage("write_streamdata: EOF on STDOUT(?) during write.\n"); 
+							return -1; 
+						}
+					}
+					chan->bytes_written_nt += chan->payload_size;
+					bytes_written += chan->payload_size;
 				}
-				chan->bytes_written_nt += chan->payload_size;
-				bytes_written += chan->payload_size;
 			} else {
 				uint32_t first_write = SHOUTCAST_METAINT - chan->bytes_written_nt;
 				uint32_t second_write = chan->payload_size - first_write; 
@@ -589,37 +584,39 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, dvbshout_ch
 				snprintf(streamtitle, STR_BUF_SIZE -1, "StreamTitle='%s';", global_state->stream_title);
 				bytes = ((strlen(streamtitle))>>4) + 1; /* Shift right by 4 bit => Divide by 16, and add 1 to get minimum possible length */
 				if (first_write > 0) {
-					written = write(STDOUT, (char*)chan->buf, first_write); 
-					if (written <= 0) {
-						if (written < 0) {
+					if (! fwrite((char*)chan->buf, first_write, 1, stdout)) {
+						if (ferror(stdout)) {
 							output_logmessage("write_streamdata: Error during write: %s, Exiting.\n", strerror(errno));
 						} else {
 							output_logmessage("write_streamdata: Error or EOF on STDOUT(?) during write.\n"); 
 						}
 						return -1;
 					}
-					bytes_written += written; 
+					bytes_written += first_write; 
 					chan->bytes_written_nt += first_write;
 				}
-				bytes_written += write(STDOUT, &bytes, 1);
-				bytes_written += write(STDOUT, streamtitle, bytes<<4);
+				fwrite(&bytes, 1, 1, stdout); 
+				fwrite(streamtitle, bytes<<4, 1, stdout); 
+				bytes_written += 1;
+				bytes_written += bytes<<4;
 				if (second_write > 0) {
-					written = write(STDOUT, (char*)(chan->buf + first_write), second_write);
-					if (written <= 0) {
-						if (written < 0) {
+					if (! fwrite((char*)(chan->buf + first_write), second_write, 1, stdout) ) {
+						if (ferror(stdout)) {
 							output_logmessage("write_streamdata: Error during write: %s, Exiting.\n", strerror(errno));
 						} else {
 							output_logmessage("write_streamdata: Error or EOF on STDOUT(?) during write.\n"); 
 						}
 						return -1;
 					}
+					written = second_write; 
 					bytes_written += written;	
 					/* Reset the Shoutcastcounter */
 					chan->bytes_written_nt = second_write;
 				}
+				fflush(stdout); 
 			}
 		} else {
-			if (chan->payload_size > 0 && write(STDOUT, (char*)chan->buf, chan->payload_size) <= 0) {
+			if (chan->payload_size > 0 && ! fwrite((char*)chan->buf, chan->payload_size, 1, stdout) ) {
 				output_logmessage("write_streamdata: Error or EOF on STDOUT(?) during write.\n");
 				return -1; 
 			}
@@ -804,13 +801,14 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 						"icy-br: %d\n" \
 						"icy-sr: %d\n" \
 						"icy-name: %s\n" \
-						"icy-metaint: 8192\n\n",
-						global_state->br, global_state->sr, global_state->station_name); 
+						"icy-metaint: %d\n\n",
+						global_state->br, global_state->sr, global_state->station_name, SHOUTCAST_METAINT); 
 			} else {
 				snprintf(header, STR_BUF_SIZE, "Content-Type: audio/mpeg\n" \
 						"Connection: close\n\n"); 
 			}
-			write(1, header, strlen(header)); 
+			fwrite(header, strlen(header), 1, stdout); 
+			fflush(stdout); 
 			global_state->output_payload = 1; 
 		}
 	}	

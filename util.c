@@ -34,7 +34,7 @@ static const char *channel_type_name[] = {
 
 /* initialize the structure after allocating memory for it */
 void init_channel (enum_channel_type channel_type, int pid, int current_channel) {
-	dvbshout_channel_t *chan =  channels[ current_channel ];
+	ts2shout_channel_t *chan =  channels[ current_channel ];
 	chan->rtp_mtu = 960;
 	chan->channel_type = channel_type;
 	chan->pid = pid; 
@@ -47,7 +47,7 @@ void init_channel (enum_channel_type channel_type, int pid, int current_channel)
 
 /* Add a channel */
 int add_channel ( enum_channel_type channel_type, int pid) {
-	dvbshout_channel_t *chan = NULL;
+	ts2shout_channel_t *chan = NULL;
 	
 	output_logmessage("add_channel(): Subscribing to MPEG PID %d (Type %s)\n", pid, channel_type_name[channel_type]); 
 	if ( channel_count >= MAX_CHANNEL_COUNT ) {
@@ -59,7 +59,7 @@ int add_channel ( enum_channel_type channel_type, int pid) {
 		return 0;
 	}
 
-	chan = calloc( 1, sizeof(dvbshout_channel_t) );
+	chan = calloc( 1, sizeof(ts2shout_channel_t) );
 	if (!chan) {
 		fprintf(stderr, "add_channel(): Failed to allocate memory for new channel with PID %d and channel_type %d", pid, channel_type); 
 		return 0; 

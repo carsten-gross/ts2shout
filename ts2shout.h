@@ -190,7 +190,7 @@ typedef enum {
 } enum_channel_type;
 
 /* Structure containing single channel */
-typedef struct dvbshout_channel_s {
+typedef struct ts2shout_channel_s {
 
 	int num;				// channel number
 	int fd;					// demux file descriptor
@@ -229,7 +229,7 @@ typedef struct dvbshout_channel_s {
 	int payload_size;				// Size of the payload
 	
 
-} dvbshout_channel_t;
+} ts2shout_channel_t;
 
 typedef struct programm_info_s {
 	uint8_t	info_available;				/* Information available */
@@ -259,8 +259,8 @@ uint32_t crc32 (unsigned char *data, int len);
 /* In ts2shout.c */
 void output_logmessage(const char *fmt, ... ); 
 extern int channel_count;
-extern dvbshout_channel_t *channel_map[MAX_PID_COUNT];
-extern dvbshout_channel_t *channels[MAX_CHANNEL_COUNT];
+extern ts2shout_channel_t *channel_map[MAX_PID_COUNT];
+extern ts2shout_channel_t *channels[MAX_CHANNEL_COUNT];
 
 /* process_ts_packet returns the number of handled bytes, 0 or one of the two
  * error codes. A soft error is logged and ignored if it happens spuriously, a 
@@ -271,7 +271,7 @@ extern dvbshout_channel_t *channels[MAX_CHANNEL_COUNT];
 int16_t process_ts_packet(unsigned char *buf);
 
 /* In pes.c */
-unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, dvbshout_channel_t *chan);
+unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, ts2shout_channel_t *chan);
 
 /* In util.c */
 void init_structures();
