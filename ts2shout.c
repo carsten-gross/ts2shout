@@ -46,6 +46,8 @@ uint8_t shoutcast=1;      /* Send shoutcast headers? */
 uint8_t	logformat=1;      /* Apache compatible output format */
 uint8_t	cgi_mode=0;       /* Are we running as CGI programme? This is set if there is QUERY_STRING set in the environment */ 
 
+static const long int mb_conversion = 1024 * 1024;
+
 ts2shout_channel_t *channel_map[MAX_PID_COUNT];
 ts2shout_channel_t *channels[MAX_CHANNEL_COUNT];
 
@@ -257,7 +259,7 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	
 	start = pes_ptr + start_of_pes;
 	/* If an information block doesn't fit into an mpeg-ts frame it is continued directly in the next frame. The information is 
-	 * directly attached after the PID (4 Byte offset). It is possible that there is a multi-ts-frame continuation 
+	 * directly attached after the PID (TS_HEADER_SIZE=4 Byte offset). It is possible that there is a multi-ts-frame continuation 
 	 * we have to calculate a lot */
 	if (eit_table->continuation > 0) {
 #ifdef DEBUG
@@ -267,11 +269,11 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 		// write(2, pes_ptr + start_of_pes, TS_PACKET_SIZE - start_of_pes); 
 		// fprintf(stderr, "\n");
 #endif 
-		memcpy(eit_table->buffer + eit_table->offset - 4, pes_ptr + start_of_pes, TS_PACKET_SIZE - start_of_pes);		
-		eit_table->offset += TS_PACKET_SIZE - 4; /* Offset for next TS packet */
+		memcpy(eit_table->buffer + eit_table->offset - TS_HEADER_SIZE, pes_ptr + start_of_pes, TS_PACKET_SIZE - start_of_pes);		
+		eit_table->offset += TS_PACKET_SIZE - TS_HEADER_SIZE; /* Offset for next TS packet */
 		eit_table->counter += 1;
 		/* TS_PACKET_SIZE is not perfectly correct, Hopefully it is nearly correct :-) */
-		if (eit_table->offset - 4 >= eit_table->section_length) {
+		if (eit_table->offset - TS_HEADER_SIZE >= eit_table->section_length) {
 			/* Section is finished, finally */
 			eit_table->buffer_valid = 1; 
 			eit_table->continuation = 0; 
@@ -281,7 +283,7 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 #endif 
 		} else {
 			// This should not happen, because the standard recommends a maximum size of ~4K */
-			if (eit_table->offset + TS_PACKET_SIZE - 4 > EIT_BUF_SIZE ) {
+			if (eit_table->offset + TS_PACKET_SIZE - TS_HEADER_SIZE > EIT_BUF_SIZE ) {
 				output_logmessage("extract_eit_payload: Maximum Data-Chunk Size of %d characters " \
 				    "exceeded by MPEG-Transport-Stream. Did read %d continued packets\n", 
 					EIT_BUF_SIZE, eit_table->counter);
@@ -294,14 +296,18 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	} 
 	if ( eit_table->buffer_valid == 0) {
 		/* A short EIT frame < TS_PACKET_SIZE length */
-		if ( eit_table->continuation == 0 && EIT_SECTION_LENGTH(start) < (TS_PACKET_SIZE - start_of_pes ) ) {
+		if ( eit_table->continuation == 0 && EIT_SECTION_LENGTH(start) < (TS_PACKET_SIZE - TS_HEADER_SIZE ) ) {
 			eit_table->buffer_valid = 1; 
 			eit_table->continuation = 0;
 			eit_table->counter = 1; 
 			eit_table->section_length = EIT_SECTION_LENGTH(start); 
 			eit_table->offset = 0; 
 			memcpy(eit_table->buffer, start, TS_PACKET_SIZE - start_of_pes );
-		} else if ( ( EIT_SECTION_LENGTH(start) >= (TS_PACKET_SIZE - start_of_pes )) && ( 0 == eit_table->continuation ) ) {
+	#ifdef DEBUG
+			fprintf (stderr, "EIT: Single frame-table 0x%2.2x (last table 0x%2.2x), Section-Length: %d (%d), Section: %d\n",
+				EIT_PACKET_TABLEID(start), EIT_PACKET_LAST_TABLEID(start), EIT_SECTION_LENGTH(start), TS_PACKET_SIZE - start_of_pes, EIT_SECTION_NUMBER(start)); 
+	#endif 
+		} else if ( ( EIT_SECTION_LENGTH(start) >= (TS_PACKET_SIZE - TS_HEADER_SIZE )) && ( 0 == eit_table->continuation ) ) {
 			/* A long frame, will be continued in next frame */
 			eit_table->buffer_valid = 0; /* It's not valid @ the moment */
 			eit_table->continuation = 1;
@@ -649,7 +655,6 @@ void pid_change() {
 void filter_global_loop(int fd_dvr) {
 	unsigned char buf[TS_PACKET_SIZE];
 	int bytes_read;
-	const long int mb_conversion = 1024 * 1024;
 	const uint16_t max_sync_errors = 5;
 	
 	while (! Interrupted ) {
@@ -736,7 +741,6 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 	size_t already_processed = 0; 
 	char header[STR_BUF_SIZE]; 
     struct memory_struct *mem = (struct memory_struct *)userp;
-	const long int mb_conversion = 1024 * 1024;
 
 	/* process the data we've stored from the last run? */
 	unsigned char * buf = contents;
@@ -760,10 +764,10 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 		mem->size = 0;
 	}
 	while (already_processed < realsize && already_processed + TS_PACKET_SIZE <= realsize) {
+		global_state->bytes_streamed_read += TS_PACKET_SIZE; 
 		if (TS_PACKET_SYNC_BYTE(buf) == 0x47) {
 			if ( process_ts_packet(buf) != TS_HARD_ERROR ) {
 				already_processed += TS_PACKET_SIZE; 
-				global_state->bytes_streamed_read += TS_PACKET_SIZE; 
 				buf += TS_PACKET_SIZE; 
 			} else {
 				/* an error occured */
@@ -773,7 +777,7 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 		} else {
 			/* TODO resync? */
 			output_logmessage("write_callback (curl): Skipped data at block position %d, realsize %d (%.2f MB read)\n", already_processed, realsize, (float)global_state->bytes_streamed_read/mb_conversion); 
-			already_processed += TS_PACKET_SIZE;
+			already_processed += TS_PACKET_SIZE; 
 			buf += TS_PACKET_SIZE;
 		}
 	} 
@@ -786,6 +790,7 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 		memcpy(mem->memory, buf, realsize - already_processed);
 		mem->size = realsize - already_processed; 
 		already_processed += realsize - already_processed; 
+		global_state->bytes_streamed_read += realsize - already_processed;
 	}
 	if (!global_state->output_payload) {
 		/* not all data items were available, check wether they are available now. 
@@ -813,9 +818,6 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 	}	
 	if (Interrupted) {
 write_error: 
-		output_logmessage("write_callback (curl): %s after fetching %.2f MB and writing %.2f MB. Exiting.\n", 
-			((Interrupted >0 && Interrupted <=32)?strsignal(Interrupted):"streaming error"), 
-			(float)global_state->bytes_streamed_read/mb_conversion, (float)global_state->bytes_streamed_write/mb_conversion ); 
 		already_processed = 0;
 	}
     return already_processed;
@@ -841,9 +843,14 @@ void start_curl_download() {
 	/* We only want mpeg transport */
     header = curl_slist_append(header, "Accept: audio/mp2t");
 	if (getenv("HTTP_USER_AGENT")) {
-		snprintf(user_agent_string, STR_BUF_SIZE, "User-Agent: ts2shout (%s)", getenv("HTTP_USER_AGENT")); 
+		snprintf(user_agent_string, STR_BUF_SIZE, "User-Agent: ts2shout for %s", getenv("HTTP_USER_AGENT")); 
 	} else {
 		snprintf(user_agent_string, STR_BUF_SIZE, "User-Agent: ts2shout");
+	}
+	if (getenv("REMOTE_ADDR")) {
+		char s[STR_BUF_SIZE];
+		sprintf(s, "Forwarded: by \"%s\"; for \"%s\"; proto=http", "127.0.0.1", getenv("REMOTE_ADDR")); 
+		header = curl_slist_append(header, s);
 	}
     header = curl_slist_append(header, user_agent_string);
     int res = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header);
@@ -879,6 +886,9 @@ void start_curl_download() {
     } else {
         /* Do something */
     }
+	output_logmessage("curl_download: %s after fetching %.2f MB and writing %.2f MB. Exiting.\n", 
+		((Interrupted >0 && Interrupted <=32)?strsignal(Interrupted):"streaming error"),
+		(float)global_state->bytes_streamed_read/mb_conversion, (float)global_state->bytes_streamed_write/mb_conversion );
     /* cleanup curl stuff */
     curl_easy_cleanup(curl);
     free(chunk.memory);

@@ -32,6 +32,8 @@
 
 // The size of MPEG2 TS packets
 #define TS_PACKET_SIZE			188
+// The size of MPEG2 TS headers
+#define TS_HEADER_SIZE			4
 
 // There seems to be a limit of 32 simultaneous filters in the driver
 #define MAX_CHANNEL_COUNT		32
