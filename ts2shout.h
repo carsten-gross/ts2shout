@@ -41,9 +41,7 @@
 
 // Standard string buffer size
 #define STR_BUF_SIZE			6000
-
-// Maximum allowed PID value
-// #define RTP_MPEG_AUDIO_PT		14
+#define EIT_BUF_SIZE			5000
 
 /* Shoutcast Interval to next metadata */
 #define SHOUTCAST_METAINT		8192
@@ -191,31 +189,19 @@ typedef enum {
 
 /* Structure containing single channel */
 typedef struct ts2shout_channel_s {
-
 	int num;				// channel number
-	int fd;					// demux file descriptor
-	int pid;				// Packet Identifier of audio stream
+	int pid;				// Packet Identifier of stream
 
 	enum_channel_type channel_type;	// Channel Type (MPEG / PMT / whatever) 
 	
-	// Metadata about the channel
-	char name[STR_BUF_SIZE];	// channel name
-	char genre[STR_BUF_SIZE];	// genre
-	char description[STR_BUF_SIZE];	// description
-	char url[STR_BUF_SIZE];		// Informational URL
-	char title[STR_BUF_SIZE];   // Current title information (for shoutcast StreamTitle)
-
 	int continuity_count;	// TS packet continuity counter
+
+	/* Only relevant for the payload stream */	
 	int pes_stream_id;		// PES stream ID
 	size_t pes_remaining;	// Number of bytes remaining in current PES packet
 	unsigned long pes_ts;	// Timestamp for current PES packet
-	
-	char is_public;				// announce existance?
-	char mount[STR_BUF_SIZE];	// mount point
-
 	mpa_header_t mpah;		// Parsed MPEG audio header
 	int synced;				// Have MPA sync?
-	
 	uint32_t  bytes_written_nt; // Bytes written (count the 8192 Bytes to next StreamTitle inside shoutcast)
 	uint8_t * buf;			// MPEG Audio Buffer (with 4 nulls bytes)
 	uint8_t * buf_ptr;		// Pointer to start of audio data
@@ -227,10 +213,9 @@ typedef struct ts2shout_channel_s {
 	
 	int frames_per_packet;			// Number of MPEG audio frames per packet
 	int payload_size;				// Size of the payload
-	
-
 } ts2shout_channel_t;
 
+/* global information about the received programme */
 typedef struct programm_info_s {
 	uint8_t	info_available;				/* Information available */
 	uint8_t	output_payload;				/* Header with information is sent, therefore audiodata can be output (for CGI mode) */
@@ -244,13 +229,14 @@ typedef struct programm_info_s {
 
 } programm_info_t; 
 
+/* An aggregator, currently used only for EIT (event information table) */
 typedef struct section_aggregate_s {
 	uint8_t		buffer_valid;		/* Buffer is valid */
 	uint8_t		continuation;		/* A continued (EIT) information block is found */
 	uint8_t		counter;			/* The counter for the current fragment */
 	uint16_t	offset;				/* Determine the offset in the information buffer */
 	uint16_t	section_length;		/* The section length as found in the first ts packet */
-	uint8_t buffer[5000];
+	uint8_t buffer[EIT_BUF_SIZE];
 } section_aggregate_t; 
 
 /* crc32.c */
@@ -265,7 +251,7 @@ extern ts2shout_channel_t *channels[MAX_CHANNEL_COUNT];
 /* process_ts_packet returns the number of handled bytes, 0 or one of the two
  * error codes. A soft error is logged and ignored if it happens spuriously, a 
  * hard error leads to an immediate end of stream processing and an exit with an 
- * appropriate log message. */
+ * appropriate log message. TODO: Handle the SOFT_ERROR */
 #define TS_SOFT_ERROR -1
 #define TS_HARD_ERROR -2 
 int16_t process_ts_packet(unsigned char *buf);

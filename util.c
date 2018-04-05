@@ -39,7 +39,6 @@ void init_channel (enum_channel_type channel_type, int pid, int current_channel)
 	chan->channel_type = channel_type;
 	chan->pid = pid; 
     chan->num = current_channel;
-	chan->fd = -1;
 	chan->continuity_count = -1;
 	channel_map[ pid ] = chan;
 	return;

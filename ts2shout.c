@@ -27,7 +27,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <ctype.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <signal.h>
@@ -282,10 +281,10 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 #endif 
 		} else {
 			// This should not happen, because the standard recommends a maximum size of ~4K */
-			if (eit_table->offset + TS_PACKET_SIZE - 4 > STR_BUF_SIZE ) {
+			if (eit_table->offset + TS_PACKET_SIZE - 4 > EIT_BUF_SIZE ) {
 				output_logmessage("extract_eit_payload: Maximum Data-Chunk Size of %d characters " \
 				    "exceeded by MPEG-Transport-Stream. Did read %d continued packets\n", 
-					STR_BUF_SIZE, eit_table->counter);
+					EIT_BUF_SIZE, eit_table->counter);
 				// reset internal buffer
 				memset(eit_table, 0, sizeof(section_aggregate_t));
 			}
@@ -1036,7 +1035,6 @@ int main(int argc, char **argv)
 	}	
 	// Clean up
 	for (i=0;i<channel_count;i++) {
-		if (channels[i]->fd != -1) close(channels[i]->fd);
 		if (channels[i]->buf) free( channels[i]->buf );
 		free( channels[i] );
 	}
