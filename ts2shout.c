@@ -212,7 +212,11 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 		PMT_LAST_SECTION_NUMBER(start));
 #endif 
 	unsigned char * description_offset = SDT_FIRST_DESCRIPTOR(start);
+#ifdef DEBUG
+	if (1) {
+#else 
 	if (strlen(global_state->station_name) == 0) {
+#endif 
 		if (crc32(start, PMT_SECTION_LENGTH(start) + 3) != 0) {
 #ifdef DEBUG
 			fprintf(stderr, "SDT: crc32 does not match, calculated %d, expected 0\n", crc32(start, PMT_SECTION_LENGTH(start) + 3)); 
@@ -227,20 +231,27 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 				char service_name[STR_BUF_SIZE];
 				uint8_t service_name_length = description_content[SDT_DC_PROVIDER_NAME_LENGTH(description_content) + 4]; 
 				unsigned char * tmp = description_content + SDT_DC_PROVIDER_NAME_LENGTH(description_content) + 6; 
-				if (SDT_DC_PROVIDER_NAME_LENGTH(description_content) < STR_BUF_SIZE) {
-					if (SDT_DC_PROVIDER_NAME(description_content)[0] < 0x20) {
-						/* MPEG Standard has very sophisticated charset encoding, therefore a simple Hack for my setup */
-						snprintf(provider_name, SDT_DC_PROVIDER_NAME_LENGTH(description_content), "%s", SDT_DC_PROVIDER_NAME(description_content + 1) ); 
-					} else {
-						snprintf(provider_name, SDT_DC_PROVIDER_NAME_LENGTH(description_content), "%s", SDT_DC_PROVIDER_NAME(description_content));
+				/* Service 0x02, 0x0A, 0x07: (Digital) Radio */
+				if (SDT_DC_SERVICE_TYPE(description_content) == 0x2
+					|| SDT_DC_SERVICE_TYPE(description_content) == 0x0a 
+					|| SDT_DC_SERVICE_TYPE(description_content) == 0x07 ) {
+					if (SDT_DC_PROVIDER_NAME_LENGTH(description_content) < STR_BUF_SIZE) {
+						if (SDT_DC_PROVIDER_NAME(description_content)[0] < 0x20) {
+							/* MPEG Standard has very sophisticated charset encoding, therefore a simple Hack for my setup */
+							snprintf(provider_name, SDT_DC_PROVIDER_NAME_LENGTH(description_content), "%s", SDT_DC_PROVIDER_NAME(description_content + 1) ); 
+						} else {
+							snprintf(provider_name, SDT_DC_PROVIDER_NAME_LENGTH(description_content), "%s", SDT_DC_PROVIDER_NAME(description_content));
+						}
 					}
-				}
-				snprintf(service_name, service_name_length, "%s", tmp);
-				/* Sometime we get garbage only store if we have a service_name with length > 0 */
-				if (strlen(service_name) > 0) {
-					/* Yes, we want to get information about the programme */
-					output_logmessage("SDT: Stream is station %s from network %s.\n", service_name, provider_name);
-					strncpy(global_state->station_name, service_name, STR_BUF_SIZE); 
+					snprintf(service_name, service_name_length, "%s", tmp);
+					/* Sometime we get garbage only store if we have a service_name with length > 0 */
+					if (strlen(service_name) > 0) {
+						/* Yes, we want to get information about the programme */
+						output_logmessage("SDT: Stream is station %s from network %s.\n", service_name, provider_name);
+						strncpy(global_state->station_name, service_name, STR_BUF_SIZE); 
+					}
+				} else {
+					output_logmessage("SDT: Warning: Stream (also) contains unkown service with id 0x%2x\n", SDT_DC_SERVICE_TYPE(description_content)); 
 				}
 			}
 		}
