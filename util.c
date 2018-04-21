@@ -48,7 +48,7 @@ void init_channel (enum_channel_type channel_type, int pid, int current_channel)
 int add_channel ( enum_channel_type channel_type, int pid) {
 	ts2shout_channel_t *chan = NULL;
 	
-	output_logmessage("add_channel(): Subscribing to MPEG PID %d (Type %s)\n", pid, channel_type_name[channel_type]); 
+	output_logmessage("add_channel(): Subscribing to MPEG PID %d (Type %s)\n", pid, channel_name(channel_type)); 
 	if ( channel_count >= MAX_CHANNEL_COUNT ) {
 		fprintf(stderr, "add_channel(): Trying to add more then %d channels\n", MAX_CHANNEL_COUNT); 
 		return 0;
@@ -78,6 +78,11 @@ void init_structures() {
 	if (! add_channel(CHANNEL_TYPE_SDT, 17))
 		exit(1);
 	return;
+}
+
+/* Get Name of channel name for better debugging */
+const char* channel_name(enum_channel_type channel_type) {
+	return channel_type_name[channel_type]; 
 }
 
 /* from https://stackoverflow.com/questions/4059775/convert-iso-8859-1-strings-to-utf-8-in-c-c */

@@ -223,12 +223,14 @@ typedef struct programm_info_s {
 	uint8_t	output_payload;				/* Header with information is sent, therefore audiodata can be output (for CGI mode) */
 	char station_name[STR_BUF_SIZE];	/* Name of station (normally only a few bytes) */
 	char stream_title[STR_BUF_SIZE];	/* StreamTitle for shoutcast stream */
+	char old_stream_title[STR_BUF_SIZE]; /* Old StreamTitle, that was given in last session */
 	uint32_t br;						/* Bitrate of stream e.g. 320000 kBit/s			*/
 	uint32_t sr;						/* Streamrate of stream e.g. 48 kHz == 48000 Hz */
     uint64_t bytes_streamed_read;		/* Total bytes read from stream */
     uint64_t bytes_streamed_write;		/* Total bytes write to stdout/streamed to application/CGI */
     uint16_t ts_sync_error;				/* Total global number of sync errors */
-
+	int	last_pid;						/* The PID of the last mpeg frame */
+	int	programm_id;					/* The transport_stream_id, aka program_id */
 } programm_info_t; 
 
 /* An aggregator, currently used only for EIT (event information table) */
@@ -264,6 +266,8 @@ unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, ts
 /* In util.c */
 void init_structures();
 int add_channel(enum_channel_type channel_type, int pid); 
+/* Get nice channel_name */
+const char* channel_name(enum_channel_type channel_type); 
 unsigned char *utf8(unsigned char* in, unsigned char* out); 
 
 #endif
