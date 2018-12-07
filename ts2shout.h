@@ -1,4 +1,4 @@
-/* dvb_defaults.h
+/* ts2shout.h
 
    Copyright (C) Nicholas Humfrey 2006, Dave Chapman 2002
    reworked to be ts2shout.h

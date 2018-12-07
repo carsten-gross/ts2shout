@@ -126,8 +126,8 @@ static void ts_continuity_check( ts2shout_channel_t *chan, int ts_cc )
 	}
 
 	chan->continuity_count++;
-	if (chan->continuity_count==16)
-		chan->continuity_count=0;
+	if (chan->continuity_count >= 16)
+		chan->continuity_count = 0;
 }
 
 
@@ -201,9 +201,9 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 uint8_t collect_continuation(section_aggregate_t* aggregation, unsigned char *pes_ptr, size_t pes_len, int start_of_pes, enum_channel_type type) {
 	unsigned char* start = pes_ptr + start_of_pes;
 	/* If an information block doesn't fit into an mpeg-ts frame it is continued in a next frame. The information is 
-	 * directly attached after the PID (TS_HEADER_SIZE=4 Byte offset). It is possible that there is a multi-ts-frame continuation 
+	 * directly attached after the PID (TS_HEADER_SIZE = 4 Byte offset). It is possible that there is a multi-ts-frame continuation 
 	 * we have to calculate a lot */
-	if (aggregation->continuation > 0) {
+ 	if (aggregation->continuation > 0) {
 #ifdef DEBUG
 		fprintf(stderr, "%s: continued frame: offset: %d, counter: %d, section_length: %d\n", 
 			channel_name(type), aggregation->offset, aggregation->counter, aggregation->section_length); 
@@ -816,6 +816,7 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 			} else {
 				/* an error occured */
 				already_processed = 0;
+
 				goto write_error; 
 			}
 		} else {

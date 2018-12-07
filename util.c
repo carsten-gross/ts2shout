@@ -47,8 +47,10 @@ void init_channel (enum_channel_type channel_type, int pid, int current_channel)
 /* Add a channel */
 int add_channel ( enum_channel_type channel_type, int pid) {
 	ts2shout_channel_t *chan = NULL;
-	
-	output_logmessage("add_channel(): Subscribing to MPEG PID %d (Type %s)\n", pid, channel_name(channel_type)); 
+	/* Avoid logging the default */
+	if ( (pid != 17) && (pid != 18) && (pid != 0) ) {	
+		output_logmessage("add_channel(): Subscribing to MPEG PID %d (Type %s)\n", pid, channel_name(channel_type)); 
+	}
 	if ( channel_count >= MAX_CHANNEL_COUNT ) {
 		fprintf(stderr, "add_channel(): Trying to add more then %d channels\n", MAX_CHANNEL_COUNT); 
 		return 0;
@@ -70,12 +72,12 @@ int add_channel ( enum_channel_type channel_type, int pid) {
 }
 
 void init_structures() {
-
+	output_logmessage("init_structures(): Subscribing to MPEG PID 0, 17, 18 (%s, %s, %s)\n", channel_name(CHANNEL_TYPE_PAT), channel_name(CHANNEL_TYPE_SDT), channel_name(CHANNEL_TYPE_EIT));
 	if (! add_channel(CHANNEL_TYPE_PAT, 0)) 
 		exit(1);
-	if (! add_channel(CHANNEL_TYPE_EIT, 18)) 
+	if (! add_channel(CHANNEL_TYPE_SDT, 17)) 
 		exit(1);
-	if (! add_channel(CHANNEL_TYPE_SDT, 17))
+	if (! add_channel(CHANNEL_TYPE_EIT, 18))
 		exit(1);
 	return;
 }
