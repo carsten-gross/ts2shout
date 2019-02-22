@@ -72,7 +72,8 @@ int add_channel ( enum_channel_type channel_type, int pid) {
 }
 
 void init_structures() {
-	output_logmessage("init_structures(): Subscribing to MPEG PID 0, 17, 18 (%s, %s, %s)\n", channel_name(CHANNEL_TYPE_PAT), channel_name(CHANNEL_TYPE_SDT), channel_name(CHANNEL_TYPE_EIT));
+	output_logmessage("init_structures(): Subscribing to MPEG PID 0, 17, 18 (%s, %s, %s)\n", 
+			channel_name(CHANNEL_TYPE_PAT), channel_name(CHANNEL_TYPE_SDT), channel_name(CHANNEL_TYPE_EIT));
 	if (! add_channel(CHANNEL_TYPE_PAT, 0)) 
 		exit(1);
 	if (! add_channel(CHANNEL_TYPE_SDT, 17)) 

@@ -318,7 +318,7 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 								/* MPEG Standard has very sophisticated charset encoding, therefore a simple Hack for my setup */
 								snprintf(provider_name, SDT_DC_PROVIDER_NAME_LENGTH(description_content), "%s", SDT_DC_PROVIDER_NAME(description_content + 1) ); 
 							} else {
-								snprintf(provider_name, SDT_DC_PROVIDER_NAME_LENGTH(description_content), "%s", SDT_DC_PROVIDER_NAME(description_content));
+								snprintf(provider_name, SDT_DC_PROVIDER_NAME_LENGTH(description_content) + 1, "%s", SDT_DC_PROVIDER_NAME(description_content));
 							}
 						}
 						/* like above, but written compacted, if first character is smaller 0x20 it's the charset encoding */
