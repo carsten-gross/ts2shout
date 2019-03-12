@@ -1,10 +1,10 @@
 # ts2shout
 ts2shout is a small software that acts as a filter or cgi programm to convert a single
 program mpeg transport stream directly to a webradio compatible shoutcast stream. 
-I actually use it for playing DVB-C on Squeezebox players. Please see my page 
+I actually use it for playing DVB-C and DVB-S on Squeezebox players. Please see my page 
 http://www.siski.de/~carsten/radio-streaming-squeezebox.html for more information.
 
-It is heavily based on the dvbshout application by Nicholas J. Humfrey
+It is based on the dvbshout application by Nicholas J. Humfrey
 (https://github.com/njh/dvbshout) - but the use case here is completly
 different. ts2shout uses autoconfiguration by reading PAT and PMT tables from a
 single program mpeg transport stream and outputs a native mpeg (or shoutcast) stream 
@@ -30,7 +30,7 @@ PAT/PMT and the "current programm" from the mpeg EIT ("EPG") translated to
 most shoutcast radio-stations and described in
 http://www.smackfu.com/stuff/programming/shoutcast.html. ts2shout should work
 with most DVB-C/DVB-S radio stations and was tested by myself with Unitymedia
-DVB-C network.
+DVB-C and Astra 19.2E DVB-S satellite reception.
 
 Just compile the application with make on your linux box and install it
 manually e.g. to /usr/local/bin/ts2shout . It does not need any libraries for
