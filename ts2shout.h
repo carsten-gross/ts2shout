@@ -229,7 +229,6 @@ typedef struct programm_info_s {
     uint64_t bytes_streamed_read;		/* Total bytes read from stream */
     uint64_t bytes_streamed_write;		/* Total bytes write to stdout/streamed to application/CGI */
     uint16_t ts_sync_error;				/* Total global number of sync errors */
-	int	last_pid;						/* The PID of the last mpeg frame */
 	int	programm_id;					/* The transport_stream_id, aka program_id */
 } programm_info_t; 
 

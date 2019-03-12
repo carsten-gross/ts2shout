@@ -325,12 +325,18 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 						snprintf(service_name, service_name_length + (tmp[0]< 0x20?0:1), "%s", tmp + (tmp[0]< 0x20?1:0));
 						/* Sometime we get garbage only store if we have a service_name with length > 0 */
 						if (strlen(service_name) > 0) {
+							/* service name is latin1 in most cases */
+							unsigned char utf8_service_name[STR_BUF_SIZE];
+							utf8((unsigned char*)service_name, utf8_service_name);
 							/* Yes, we want to get information about the programme */
-							output_logmessage("SDT: Stream is station %s from network %s.\n", service_name, provider_name);
+							output_logmessage("SDT: Stream is station %s from network %s.\n", utf8_service_name, provider_name);
 							strncpy(global_state->station_name, service_name, STR_BUF_SIZE); 
 						}
 					} else {
-						output_logmessage("SDT: Warning: Stream (also) contains unkown service with id 0x%2x\n", SDT_DC_SERVICE_TYPE(description_content)); 
+						/* If service type is 0xff it's very likely just a stuffing frame without any content */
+						if (SDT_DC_SERVICE_TYPE(description_content) != 0xff) {
+							output_logmessage("SDT: Warning: Stream (also) contains unkown service with id 0x%2x\n", SDT_DC_SERVICE_TYPE(description_content)); 
+						}
 					}
 				}
 			}
@@ -684,13 +690,6 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 	return bytes_written; 
 }
 
-/* This is a helper function for the processing loop of process_ts_packet
- * it resets the the data collector if the pid changes */
-void pid_change() {
-	//memset(eit_table, 0, sizeof(section_aggregate_t)); 
-	// memset(sdt_table, 0, sizeof(section_aggregate_t)); 
-}
-
 /* In FILTER mode (non-cgi-mode) we simply start with a file descriptor. This is a 
  * leftover from the original code, because in our case it is always stdin 
  * This is the main processing loop for filter mode that runs until we have no 
@@ -989,10 +988,6 @@ int16_t process_ts_packet( unsigned char * buf )
 		pes_ptr += (TS_PACKET_ADAPT_LEN(buf) + 1);
 		pes_len -= (TS_PACKET_ADAPT_LEN(buf) + 1);
 	}
-	/* this frame: different PID then last frame? Then "pid_change" */
-	if (pid != global_state->last_pid) {
-		pid_change();
-	}
 	// Check we know about the payload
 	if (channel_map[ pid ]) {
 		// Continuity check
@@ -1028,7 +1023,6 @@ int16_t process_ts_packet( unsigned char * buf )
 				break;
 		}
 	}
-	global_state->last_pid = pid; 
 	return TS_PACKET_SIZE; 
 }
 
