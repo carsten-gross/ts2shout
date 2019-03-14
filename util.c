@@ -35,7 +35,6 @@ static const char *channel_type_name[] = {
 /* initialize the structure after allocating memory for it */
 void init_channel (enum_channel_type channel_type, int pid, int current_channel) {
 	ts2shout_channel_t *chan =  channels[ current_channel ];
-	chan->rtp_mtu = 960;
 	chan->channel_type = channel_type;
 	chan->pid = pid; 
     chan->num = current_channel;

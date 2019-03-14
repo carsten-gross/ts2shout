@@ -45,6 +45,7 @@ int channel_count=0;      /* Current listen channel count */
 uint8_t shoutcast=1;      /* Send shoutcast headers? */
 uint8_t	logformat=1;      /* Apache compatible output format */
 uint8_t	cgi_mode=0;       /* Are we running as CGI programme? This is set if there is QUERY_STRING set in the environment */ 
+uint8_t ac3_output = 0;	  /* AC-3 Output? */
 
 static const long int mb_conversion = 1024 * 1024;
 
@@ -70,9 +71,13 @@ static void signal_handler(int signum)
 static void parse_args(int argc, char **argv) 
 {
 	/* TODO ... improve command line handling */
-	if (argc == 2) {
-		if (strcmp("noshout", argv[1]) == 0) {
+	int i = 0;
+	for (i = 0; i < argc; i++) {
+		if (strcmp("noshout", argv[i]) == 0) {
 			shoutcast = 0;
+		}
+		if (strcmp("ac3", argv[i]) == 0) {
+			ac3_output = 1; 
 		}
 	}
 }
@@ -124,7 +129,6 @@ static void ts_continuity_check( ts2shout_channel_t *chan, int ts_cc )
 		}
 		chan->continuity_count = ts_cc;
 	}
-
 	chan->continuity_count++;
 	if (chan->continuity_count >= 16)
 		chan->continuity_count = 0;
@@ -159,8 +163,55 @@ static void extract_pat_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	
 }
 
+/* Get info about an available media streams (we want mp1/mp2 or - not done yet - AC-3) */
+
+static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned char *start, int want_ac3) {
+	if (! want_ac3) {
+		if (PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x03 /* MPEG 1 audio */
+			|| PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x04 /* MPEG 2 audio */
+			|| PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x0f /* MPEG 2 audio */) {
+			/* We found a mp1/mp2 media stream */
+			output_logmessage("add_payload_from_pmt(): Found mp1/mp2 audio stream in PID %d\n", PMT_PID(pmt_stream_info_offset)); 
+			add_channel(CHANNEL_TYPE_PAYLOAD, PMT_PID(pmt_stream_info_offset));
+			global_state->payload_added = 1; 
+		}
+	} else {
+		/* 0x06 private data (very likely AC-3), scan a maximum of 2 stream descriptors to try to get the AC-3 descriptor */
+		if ( PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x06 ) {
+			unsigned char *first_stream_descriptor = PMT_FIRST_STREAM_DESCRIPTORP(pmt_stream_info_offset);
+			/* 0x6a AC-3 descriptor found? */
+#ifdef DEBUG
+			fprintf(stderr, "private-stream found, first stream descriptor 0x%x\n", PMT_STREAM_DESCRIPTOR_TAG(first_stream_descriptor)); 
+#endif 
+			if (PMT_STREAM_DESCRIPTOR_TAG(first_stream_descriptor) != 0x6a) {
+				/* no, next */
+				unsigned char *second_stream_descriptor = first_stream_descriptor + PMT_NEXT_STREAM_DESCRIPTOROFF(first_stream_descriptor); 
+#ifdef DEBUG
+				fprintf(stderr, "private-stream found, second stream descriptor 0x%x, using offset %d\n", PMT_STREAM_DESCRIPTOR_TAG(second_stream_descriptor), PMT_NEXT_STREAM_DESCRIPTOROFF(first_stream_descriptor)); 
+#endif 
+				if (PMT_STREAM_DESCRIPTOR_TAG(second_stream_descriptor) == 0x6a) {
+					output_logmessage("add_payload_from_pmt(): Found AC-3 audio stream in PID %d\n", PMT_PID(pmt_stream_info_offset)); 
+					add_channel(CHANNEL_TYPE_PAYLOAD, PMT_PID(pmt_stream_info_offset));
+					global_state->payload_added = 1; 
+				}
+			} else {
+				/* TODO AC-3 stream descriptor found in first descriptor */
+			}
+		}
+	}
+}
+
+
+/* Get stream info out of the PMT (program map table). We are only interested for radio mp1/mp2 streams or 
+ * alternativly for AC-3 (not done yet). */
+
 static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes ) {
 	unsigned char* start = NULL;
+	unsigned int found_streams_counter = 0;
+	/* Only check for possible streaming payload in PMT if not one is added yet */
+	if ( global_state->payload_added) {
+		return;
+	}
 	start = pes_ptr + start_of_pes; 
 #ifdef DEBUG
     fprintf (stderr, "PMT: Found data, table 0x%2.2x (Section length %d), program number %d, section %d, last section %d, INFO Length %d\n",
@@ -173,25 +224,33 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 #endif 
 	/* Look into table 0x02 containing the PID to be read */
 	if ( PMT_TABLE_ID(start) == 2) {
+		/* Check crc32 to avoid checking it later on */
+		if (crc32(start, PAT_SECTION_LENGTH(start) + 3) != 0) {
+			output_logmessage("extract_pmt_payload: crc32 does not match %d found, 0 expected\n", crc32(start, PAT_SECTION_LENGTH(start) + 3)); 
+			return;
+		}
 		if (PMT_SECTION_NUMBER(start) == 0 && PMT_LAST_SECTION_NUMBER(start) == 0) {
 			unsigned char* pmt_stream_info_offset = PMT_DESCRIPTOR(start);
-			if (! channel_map[PMT_PID(pmt_stream_info_offset)]) {
-				if (PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x03 /* MPEG 1 audio */
-					|| PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x04 /* MPEG 2 audio */
-					|| PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x0f /* MPEG 2 audio */) {
-				/* Everything matched, now we calculate the crc32 of the PMT frame, to avoid decoding garbage */
-					if (crc32(start, PAT_SECTION_LENGTH(start) + 3) == 0) {	
-						add_channel(CHANNEL_TYPE_PAYLOAD, PMT_PID(pmt_stream_info_offset));
+			/* Search for stream description */
+			while ((pmt_stream_info_offset != NULL) && found_streams_counter < 3) {
+				if (! channel_map[PMT_PID(pmt_stream_info_offset)]) {
+					add_payload_from_pmt(pmt_stream_info_offset, start, ac3_output);
+					found_streams_counter += 1;
+					if (global_state->payload_added > 0) {
+						pmt_stream_info_offset = NULL;
 					} else {
-						output_logmessage("PMT: Cannot add audio-stream PID %d, PMT crc32 does not match: calculated %d, expected 0\n", 
-							PMT_PID(pmt_stream_info_offset),
-							crc32(start, PAT_SECTION_LENGTH(start) + 3));
+						pmt_stream_info_offset = PMT_FIRST_STREAM_DESCRIPTORP(pmt_stream_info_offset) + PMT_INFO_LENGTH(pmt_stream_info_offset);
+#ifdef DEBUG
+	fprintf(stderr, "PMT: Found other stream with PID %d, stream type %d\n", PMT_PID(pmt_stream_info_offset), PMT_STREAM_TYPE(pmt_stream_info_offset)); 
+#endif
 					}
 				} else {
+					/* check next */
+					pmt_stream_info_offset = PMT_FIRST_STREAM_DESCRIPTORP(pmt_stream_info_offset) + PMT_INFO_LENGTH(pmt_stream_info_offset); 
 #ifdef DEBUG
-					fprintf(stderr, "PMT: Stream with pid %d found, but unsusable format (stream type %d)\n", 
-			                PMT_PID(pmt_stream_info_offset), PMT_STREAM_TYPE(pmt_stream_info_offset));
-#endif
+	fprintf(stderr, "PMT: Found other stream with PID %d, stream type %d\n", PMT_PID(pmt_stream_info_offset), PMT_STREAM_TYPE(pmt_stream_info_offset)); 
+#endif 
+					found_streams_counter += 1; 
 				}
 			}
 		}
@@ -474,87 +533,35 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 	
 	// Start of a PES header?
 	if ( start_of_pes ) {
-		
-
 		// Parse the PES header
 		es_ptr = parse_pes( pes_ptr, pes_len, &es_len, chan );
-
-	
-		/***** 
-		   Having problems staying in sync with the PES stream 
-		   So don't even try for the time being
-		******/
-
-		// Does PES stream have timestamp attached?
-		/*if (chan->pes_ts) {
-			unsigned long buf_dur = 0;
-			
-			// Calulate the duration of the frames already in the buffer
-			if (chan->buf_used) {
-				int frames_in_buffer = chan->buf_used/chan->mpah.framesize;
-				buf_dur = ((chan->mpah.samples * 90000) / chan->mpah.samplerate) * frames_in_buffer;
-			}
-	
-
-			// Make sure the RTP timestamp is in sync
-			int ts_diff = (chan->rtp_ts+buf_dur) - chan->pes_ts;
-			if (ts_diff) {
-				if (chan->synced && chan->rtp_ts != 0) {
-					fprintf(stderr, "Warning: PES TS != RTP TS (pid: %d, diff=%d)\n", chan->pid, ts_diff);
-				}
-				chan->rtp_ts = chan->pes_ts-buf_dur;
-			}
-			
-		}*/
-
-		
 	} else if (chan->pes_stream_id) {
-	
 		// Don't output any data until we have seen a PES header
 		es_ptr = pes_ptr;
 		es_len = pes_len;
-	
 		// Are we are the end of the PES packet?
 		if (es_len>chan->pes_remaining) {
 			es_len=chan->pes_remaining;
 		}
-		
 	}
-	
 	// Subtract the amount remaining in current PES packet
 	chan->pes_remaining -= es_len;
-
-	
 	// Got some data to write out?
 	if (es_ptr) {
-	
 		// Scan through Elementary Stream (ES) 
 		// and try and find MPEG audio stream header
 		while (!chan->synced && es_len>=4) {
-		
 			// Valid header?
 			if (mpa_header_parse(es_ptr, &chan->mpah)) {
-
 				// Now we know bitrate etc, set things up
-				output_logmessage("Synced to MPEG audio in PID %d stream: 0x%x\n", chan->pid, chan->pes_stream_id );
+				output_logmessage("Synced to audio in PID %d stream: 0x%x\n", chan->pid, chan->pes_stream_id );
 				mpa_header_print( &chan->mpah );
 				chan->synced = 1;
-				
 				// Work out how big payload will be
-				if (chan->rtp_mtu < chan->mpah.framesize) {
-					output_logmessage("Error: audio frame size %d is bigger than packet MTU %d.\n", chan->mpah.framesize, chan->rtp_mtu);
-					exit(-1);
-				}
-				
 				// Calculate the number of frames per packet
-				chan->frames_per_packet = ( chan->rtp_mtu / chan->mpah.framesize );
-				chan->payload_size = chan->frames_per_packet * chan->mpah.framesize;
-				/* 
-				fprintf(stderr, "  RTP payload size: %d (%d frames of audio)\n", 
-					chan->payload_size, chan->frames_per_packet );
-				*/
-			    
-				
+				// chan->frames_per_packet = ( (7 * TS_PACKET_SIZE) / chan->mpah.framesize );
+				chan->payload_size = 2048; // chan->frames_per_packet * chan->mpah.framesize;
+			
 				// Allocate buffer to store packet in
 				chan->buf_size = chan->payload_size + TS_PACKET_SIZE;
 				chan->buf = realloc( chan->buf, chan->buf_size + 4 );
@@ -563,9 +570,7 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 					exit(-1);
 				}
 				chan->buf_ptr = chan->buf;
-				
 				// Initialise the RTP TS to the PES TS
-				chan->rtp_ts = chan->pes_ts;
 			} else {
 				// Skip byte
 				es_len--;
@@ -678,10 +683,6 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 			chan->bytes_written_nt += chan->payload_size;
 		}
 		#endif 
-		// Timestamp for MPEG Audio is based on fixed 90kHz clock rate
-		chan->rtp_ts += ((chan->mpah.samples * 90000) / chan->mpah.samplerate)
-							* chan->frames_per_packet;
-
 		// Move any remaining memory to the start of the buffer
 		chan->buf_used -= chan->payload_size;
 		memmove( chan->buf_ptr, chan->buf_ptr+chan->payload_size, chan->buf_used );
@@ -843,17 +844,25 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 			&& strlen(global_state->station_name) > 0 
 			&& global_state->br > 0 
 			&& global_state->sr > 0) {
+
+			char *content_type = NULL;
+			if (ac3_output) {
+				content_type = "Content-Type: audio/ac3";
+			} else {
+				content_type = "Content-Type: audio/mpeg";
+			}
 			if (shoutcast) {
-				snprintf(header, STR_BUF_SIZE, "Content-Type: audio/mpeg\n" \
+				snprintf(header, STR_BUF_SIZE, "%s\n" \
 						"Connection: close\n" \
 						"icy-br: %d\n" \
 						"icy-sr: %d\n" \
 						"icy-name: %s\n" \
 						"icy-metaint: %d\n\n",
+						content_type,
 						global_state->br * 1000, global_state->sr, global_state->station_name, SHOUTCAST_METAINT); 
 			} else {
-				snprintf(header, STR_BUF_SIZE, "Content-Type: audio/mpeg\n" \
-						"Connection: close\n\n"); 
+				snprintf(header, STR_BUF_SIZE, "%s\n" \
+						"Connection: close\n\n", content_type); 
 			}
 			fwrite(header, strlen(header), 1, stdout); 
 			fflush(stdout); 
@@ -1047,6 +1056,12 @@ int main(int argc, char **argv)
 			shoutcast = 1;
 		} else 	{
 			shoutcast = 0;
+		}
+		if (getenv("AC3") && strncmp(getenv("AC3"), "1", 1) == 0) {
+			ac3_output = 1;
+		}
+		if (getenv("REDIRECT_AC3") && strncmp(getenv("REDIRECT_AC3"), "1", 1) == 0) {
+			ac3_output = 1;
 		}
 	} else {
 		// Parse command line arguments

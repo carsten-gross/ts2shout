@@ -118,9 +118,16 @@
 #define PMT_PCR_PID(b) ((uint16_t)( (b[8]&0x1f) <<8 | b[9]))
 #define PMT_PROGRAMME_INFO_LENGTH(b) ((uint16_t)( (b[10]&0x0f) <<8 | b[11]))
 #define PMT_DESCRIPTOR(b) (b + 12)
+/* Macros for accessing PMT stream info inside PMT */
 #define PMT_STREAM_TYPE(b) (b[0])
 #define PMT_PID(b) ((uint16_t)((b[1] & 0x1f)<<8 | b[2]))
 #define PMT_INFO_LENGTH(b) ((uint16_t)((b[3] & 0x0f)<<8 | b[4]))
+
+/* Macros for accessing PMT descriptors */
+#define PMT_FIRST_STREAM_DESCRIPTORP(b) (b + 5)
+#define PMT_NEXT_STREAM_DESCRIPTOROFF(b) (b[1] + 2)
+#define PMT_STREAM_DESCRIPTOR_TAG(b) (b[0])
+
 
 /* Macros for accessing SDT frames */
 /* Everything before can be reused from PMT macros */
@@ -210,9 +217,6 @@ typedef struct ts2shout_channel_s {
 	uint32_t buf_size;		// Usable size of MPEG Audio Buffer
 	uint32_t buf_used;		// Amount of buffer used
 
-	int rtp_mtu;					// Maxium Transmission Unit (of payload)
-	unsigned long rtp_ts;			// RTP Session Timestamp
-	
 	int frames_per_packet;			// Number of MPEG audio frames per packet
 	int payload_size;				// Size of the payload
 } ts2shout_channel_t;
@@ -220,6 +224,7 @@ typedef struct ts2shout_channel_s {
 /* global information about the received programme */
 typedef struct programm_info_s {
 	uint8_t	info_available;				/* Information available */
+ 	uint8_t payload_added;				/* Payload is added, no longer scan PAT and PMT */
 	uint8_t	output_payload;				/* Header with information is sent, therefore audiodata can be output (for CGI mode) */
 	char station_name[STR_BUF_SIZE];	/* Name of station (normally only a few bytes) */
 	char stream_title[STR_BUF_SIZE];	/* StreamTitle for shoutcast stream */

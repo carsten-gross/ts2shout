@@ -38,7 +38,13 @@ shoutcast or mpeg as it just parses and uses a sub-extreme-minimum set of mpeg
 specification just to work for me in my special setup to get stream information
 on the Squeezebox.
 
-It can be used in conjunction with tvheadend and apache2 as follows: 
+Some german cultural programmes also have AC3 streams available. Examples are
+"Bayern 4 Klassik" or "SWR2". If you supply the command line parameter "ac3" or
+(in CGI mode) the value "1" in the environment variable "AC3" you'll get an AC3
+stream. This currently doesn't work with the squeezebox but you can fetch the stream 
+and it can be decoded by ffmpeg or played with mplayer.
+
+ts2shout can be used in conjunction with tvheadend and apache2 as follows: 
 
 Activate module mod_action (a2enmod action) on your apache2
 

@@ -46,13 +46,14 @@ unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, ts
 	}
 	
 	// Stream IDs in range 0xC0-0xDF are MPEG audio
+	// Stream ID 0xbd was seen for AC3 audio
 	if( stream_id != chan->pes_stream_id )
 	{
-		if (stream_id < 0xC0 || stream_id > 0xDF) {
+		if (stream_id != 0xbd 
+			&& ( stream_id < 0xC0 || stream_id > 0xDF )  ) {
 			fprintf(stderr, "Ignoring non-mpegaudio stream ID 0x%x (pid: %d).\n", stream_id, chan->pid);
 			return 0;
 		}
-	
 		if (chan->pes_stream_id == 0) {
 			// keep the first stream we see
 			chan->pes_stream_id = stream_id;	
@@ -62,8 +63,6 @@ unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, ts
 		}
 	
 	}
-	
-	
 	// Check PES Extension header 
 	if( PES_PACKET_SYNC_CODE(buf) != 0x2 )
 	{
@@ -83,39 +82,6 @@ unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, ts
 		chan->pes_ts=PES_PACKET_PTS(buf);
 	}
 	
-	// Store Display Time Stamp of this PES packet
-	//if (PES_PACKET_PTS_DTS(buf) & 0x3) {
-	//	chan->pes_dts=PES_PACKET_DTS(buf);
-	//}
-	
-	// Check for flag to see if MPEG audio starts at begining for this PES packet
-	// *** Disabled because not all broadcasters seem to set PES_PACKET_ALIGNMENT :( ***
-	//if (!chan->synced && PES_PACKET_ALIGNMENT(buf)==0) {
-	//	fprintf(stderr, "Warning: PES_PACKET_ALIGNMENT=0 while trying to sync to audio (pid: %d).\n", chan->pid);
-	//	return 0;
-	//}
-	
-
-/*
-	fprintf(stderr, "PES Packet:   pid: %d,  length: %d\n", chan->pid, pes_len);
-
-	fprintf(stderr, "  PES_PACKET_STREAM_ID=%d\n", PES_PACKET_STREAM_ID(buf) );
-	fprintf(stderr, "  PES_PACKET_PRIORITY=%d\n", PES_PACKET_PRIORITY(buf) );
-	fprintf(stderr, "  PES_PACKET_ALIGNMENT=%d\n", PES_PACKET_ALIGNMENT(buf) );
-	fprintf(stderr, "  PES_PACKET_COPYRIGHT=%d\n", PES_PACKET_COPYRIGHT(buf) );
-	fprintf(stderr, "  PES_PACKET_ORIGINAL=%d\n", PES_PACKET_ORIGINAL(buf) );
-	fprintf(stderr, "  PES_PACKET_PTS_DTS=0x%x\n", PES_PACKET_PTS_DTS(buf) );
-	fprintf(stderr, "  PES_PACKET_ESCR=%d\n", PES_PACKET_ESCR(buf) );
-	fprintf(stderr, "  PES_PACKET_ESR=%d\n", PES_PACKET_ESR(buf) );
-	fprintf(stderr, "  PES_PACKET_DSM_TRICK=%d\n", PES_PACKET_DSM_TRICK(buf) );
-	fprintf(stderr, "  PES_PACKET_ADD_COPY=%d\n", PES_PACKET_ADD_COPY(buf) );
-	fprintf(stderr, "  PES_PACKET_CRC=%d\n", PES_PACKET_CRC(buf) );
-	fprintf(stderr, "  PES_PACKET_EXTEN=%d\n", PES_PACKET_EXTEN(buf) );
-	
-	fprintf(stderr, "  PES_PACKET_PTS=%d\n", PES_PACKET_PTS(buf) );
-	fprintf(stderr, "  PES_PACKET_DTS=%d\n", PES_PACKET_DTS(buf) );
-*/
-
 	// Store the length of the PES packet payload
 	chan->pes_remaining = pes_len - (2+pes_header_len);
 
