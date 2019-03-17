@@ -549,19 +549,27 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 	// Got some data to write out?
 	if (es_ptr) {
 		// Scan through Elementary Stream (ES) 
-		// and try and find MPEG audio stream header
-		while (!chan->synced && es_len>=4) {
+		// and try and find MPEG audio stream header 
+		while (!chan->synced && es_len>= 6) {
 			// Valid header?
-			if (mpa_header_parse(es_ptr, &chan->mpah)) {
-				// Now we know bitrate etc, set things up
-				output_logmessage("Synced to audio in PID %d stream: 0x%x\n", chan->pid, chan->pes_stream_id );
-				mpa_header_print( &chan->mpah );
-				chan->synced = 1;
-				// Work out how big payload will be
-				// Calculate the number of frames per packet
-				// chan->frames_per_packet = ( (7 * TS_PACKET_SIZE) / chan->mpah.framesize );
-				chan->payload_size = 2048; // chan->frames_per_packet * chan->mpah.framesize;
-			
+			// MPEG1/2 
+			if (chan->pes_stream_id >= 0xc0) {
+				if (mpa_header_parse(es_ptr, &chan->mpah)) {
+					// Now we know bitrate etc, set things up
+					output_logmessage("Synced to MP1/MP2 audio in PID %d stream: 0x%x\n", chan->pid, chan->pes_stream_id );
+					mpa_header_print( &chan->mpah );
+					chan->synced = 1;
+					chan->payload_size = 2048; 
+				}
+			} else {
+				if (ac3_header_parse(es_ptr, &chan->mpah)) {
+					output_logmessage("Synced to AC-3 audio in PID %d stream: 0x%x\n", chan->pid, chan->pes_stream_id );
+					ac3_header_print( &chan->mpah );
+					chan->synced = 1;
+					chan->payload_size = 2048;
+				}
+			}
+			if (chan->synced) {
 				// Allocate buffer to store packet in
 				chan->buf_size = chan->payload_size + TS_PACKET_SIZE;
 				chan->buf = realloc( chan->buf, chan->buf_size + 4 );
@@ -577,8 +585,6 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 				es_ptr++;
 			}
 		}
-		
-		
 		// If stream is synced then put data info buffer
 		if (chan->synced && global_state->output_payload) {
 		

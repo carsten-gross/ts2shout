@@ -217,7 +217,6 @@ typedef struct ts2shout_channel_s {
 	uint32_t buf_size;		// Usable size of MPEG Audio Buffer
 	uint32_t buf_used;		// Amount of buffer used
 
-	int frames_per_packet;			// Number of MPEG audio frames per packet
 	int payload_size;				// Size of the payload
 } ts2shout_channel_t;
 

@@ -1,8 +1,9 @@
 /*
  *  MPEG Audio Header Parser
+ *  and rudimentary AC-3 Audio Header Parser
  *
  *  Copyright (C) 2006 Nicholas J. Humfrey
- *  Copyright (C) 2018 Carsten Groß
+ *  Copyright (C) 2018, 2019 Carsten Groß
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -27,7 +28,6 @@
     With a few changes and fixes
  */
  
- 
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -42,7 +42,7 @@ extern programm_info_t *global_state;
 #define MPA_MODE_MONO		3
 
 
-static const unsigned int bitrate[3][3][16] =
+static const unsigned int mp2_bitrate[3][3][16] =
 {
 	{ // MPEG 1
 		{0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 0}, // Layer 1
@@ -61,13 +61,34 @@ static const unsigned int bitrate[3][3][16] =
 	}
 };
 
-static const unsigned int samplerate[3][4] =
+static const unsigned int mp2_samplerate[3][4] =
 {
 	{ 44100, 48000, 32000, 0 }, // MPEG 1
 	{ 22050, 24000, 16000, 0 }, // MPEG 2
 	{ 11025, 12000,  8000, 0 }  // MPEG 2.5
 };
 
+/* new definitions for AC3
+ * from http://stnsoft.com/DVD/ac3hdr.html */
+static const unsigned int ac3_samplerate[4] = { 48000,44100,32000,0 };
+
+static const unsigned int ac3_bitrate[] = {
+	32,  32, 40, 40, 48, 48, 56, 56,   /* value 0 - 7 */
+	64,  64, 80, 80, 96, 96,112,112, /* value 8 - 15 */
+	128,128,160,160,192,192,224,224, /* value 16 - 23 */
+	256,256,320,320,384,384,448,448, /* value 24 - 31 */
+	512,512,576,576,640,640,0,  0,      /* value 32 - 39 */
+	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  /* value 40 - 55 */
+	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0   /* value 56 - 63 */
+}; 
+
+static const unsigned int ac3_channels[] = {
+	2,1,2,3,3,4,4,5,0,0,0 
+}; 
+
+static const char *ac3_channel_name[] = {
+	"Ch1/Ch2 (1+1)", "C (1/0)", "L/R (2/0)", "L/C/R (3/0)", "L/R/S (2/1)", 
+	"L/C/R/S (3/1)", "L/R/SL/SR (2/2)", "L/C/R/SL/SR (3/2)" }; 
 
 static void parse_header(mpa_header_t *mh, u_int32_t header)
 {
@@ -93,8 +114,8 @@ static void parse_header(mpa_header_t *mh, u_int32_t header)
 	mh->emphasis = header & 0x03;
 
 	if (mh->layer && mh->version) {
-		mh->bitrate = bitrate[mh->version-1][mh->layer-1][mh->bitrate_index];
-		mh->samplerate = samplerate[mh->version-1][mh->samplerate_index];
+		mh->bitrate = mp2_bitrate[mh->version-1][mh->layer-1][mh->bitrate_index];
+		mh->samplerate = mp2_samplerate[mh->version-1][mh->samplerate_index];
 		/* also set global stuff */
 		global_state->br = mh->bitrate; 
 		global_state->sr = mh->samplerate; 
@@ -163,6 +184,10 @@ void mpa_header_print( mpa_header_t *mh )
 	output_logmessage("   %s layer %d, %d kbps, %d Hz, %s\n", mpeg_std, mh->layer, mh->bitrate, mh->samplerate, mpeg_mode); 
 }
 
+void ac3_header_print (mpa_header_t *mh) 
+{
+	output_logmessage("  AC-3, %d kbit/s, %d Hz, channels: %s\n", mh->bitrate, mh->samplerate, ac3_channel_name[mh->channel_acmod]);
+}
 
 // Parse mpeg audio header
 // returns 1 if valid, or 0 if invalid
@@ -206,5 +231,41 @@ int mpa_header_parse( const unsigned char* buf, mpa_header_t *mh)
 
 	return 1;
 }
+
+// Parse AC-3 Audio header
+// returns 1 if valid, or 0 if invalid
+// Header info found at http://stnsoft.com/DVD/ac3hdr.html#bsmod
+int ac3_header_parse( const unsigned char* buf, mpa_header_t *mh)
+{
+	// u_int16_t crc16; 
+	/* Quick check */
+	if (buf[0] != 0x0b)
+		return 0;
+	if (buf[1] != 0x77) 
+		return 0; 
+	
+	/* Put the first four bytes into an integer */
+	// crc16 = (u_int16_t)buf[2]<<8 | (u_int16_t)buf[3];
+	mh->samplerate = ac3_samplerate[((buf[4] >>6)&0x3)];
+	mh->bitrate    = ac3_bitrate[(buf[4]&0x3f)]; 
+	mh->version	   = buf[5]>>3; 
+	mh->channel_acmod = buf[6]>>5; 
+	mh->channels   = ac3_channels[mh->channel_acmod]; 
+
+	/* make sure version is sane */
+	if (mh->version == 0)
+		return 0;
+
+	/* make sure bitrate is sane */
+	if (mh->bitrate == 0)
+		return 0;
+
+	/* make sure samplerate is sane */
+	if (mh->samplerate == 0)
+		return 0;
+
+	return 1;
+}
+
 
 

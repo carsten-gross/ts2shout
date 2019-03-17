@@ -39,6 +39,7 @@ typedef struct {
 	unsigned int original;
 	unsigned int emphasis;
 	unsigned int channels;
+	unsigned int channel_acmod;
 	unsigned int bitrate;
 	unsigned int samplerate;
 	unsigned int samples;
@@ -53,6 +54,9 @@ int mpa_header_parse( const unsigned char* buf, mpa_header_t *mh);
 void mpa_header_print( mpa_header_t *mh );
 void mpa_header_debug( mpa_header_t *mh );
 
+/* AC-3 parsing */
+int ac3_header_parse( const unsigned char* buf, mpa_header_t *mh);
+void ac3_header_print( mpa_header_t *mh );
 
 
 #endif
