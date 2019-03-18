@@ -1,7 +1,7 @@
 /* 
 
 	ts2shout.c
-	(C) Carsten Gross <carsten@siski.de> 2018
+	(C) Carsten Gross <carsten@siski.de> 2018, 2019
 	reworked from dvbshout.c written by 
 	(C) Dave Chapman <dave@dchapman.com> 2001, 2002.
 	(C) Nicholas J Humfrey <njh@aelius.com> 2006.
@@ -1074,7 +1074,7 @@ int main(int argc, char **argv)
 		parse_args( argc, argv );
 	} 
 	init_structures();
-	output_logmessage("Streaming %s in %s mode.\n", (shoutcast?"with shoutcast StreamTitles":"without shoutcast support, mpeg only"), 
+	output_logmessage("Streaming %s in %s mode.\n", (shoutcast?"with shoutcast StreamTitles":"without shoutcast support, audio only"), 
 		(cgi_mode?"CGI":"FILTER"));
 	// Setup signal handlers
 	if (signal(SIGHUP, signal_handler) == SIG_IGN) signal(SIGHUP, SIG_IGN);

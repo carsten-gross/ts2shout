@@ -264,6 +264,10 @@ int ac3_header_parse( const unsigned char* buf, mpa_header_t *mh)
 	if (mh->samplerate == 0)
 		return 0;
 
+	/* sane values are given, set them */
+	global_state->br = mh->bitrate; 
+	global_state->sr = mh->samplerate; 
+
 	return 1;
 }
 

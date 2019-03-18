@@ -2,6 +2,7 @@
 
 	pes.c
 	(C) Nicholas J Humfrey <njh@aelius.com> 2006.
+	(C) Carsten Groß <carsten@siski.de> 2019
 	
 	Copyright notice:
 	

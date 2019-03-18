@@ -1,6 +1,6 @@
-.TH TS2SHOUT 1L "14.03.2019" "User Commands" "Linux Users's Manual"
+.TH TS2SHOUT 1L "17.03.2019" "User Commands" "Linux Users's Manual"
 .SH NAME
-.B ts2shout - Convert a MPEG transport stream to shoutcast or plain mpeg
+.B ts2shout - Convert a MPEG transport stream to shoutcast, plain mpeg or AC-3 audio
 .SH SYNOPSIS
 .B t2shout [noshout] [ac3]
 .sp
@@ -15,11 +15,11 @@
 is a classic unix filter program, further described on http://www.siski.de/~carsten/radio-streaming-squeezebox.html. 
 As a unix filter you can feed an audio mpeg transport stream directly into stdin of the application. It will 
 give you a shoutcast audio stream (makes only sense in conjunction with a web server) or a plain mpeg audio stream. It
-can even generate AC-3 if it is included in the mpeg stream. There are some german programmes having this.
+can even generate AC-3 if it is included in the mpeg transport stream. There are some german radio stations having this.
 .sp
 Another application is to use it as CGI (common gateway interface) application called directly from apache. Please see
 the accompaining documenation of the package. Wether CGI or filter mode is to be used is decided by the enviroment variable
-QUERY_STRING, if it is set it is assumed that it is a CGI application.
+QUERY_STRING, if it is set it is assumed that it is running in CGI mode.
 .sp
 Normally
 .B ts2shout 
@@ -34,7 +34,7 @@ Used as a webfilter it converts from MIME type audio/mp2t to audio/mpeg (or audi
 .B noshout	
 write a native mpeg stream, not a shoutcast media stream
 
-.B ac3
+.B ac3		
 write the ac3 stream, not the mpeg audio.
 
 .SH ENVIRONMENT
@@ -58,7 +58,9 @@ If set to 1 only an AC-3 stream is wanted. Normal mpeg audio is ignored and
 delivered if this is given.
 
 .SH BUGS
-The whole mpeg transport handling stuff is kept "as minimal as possible" to keep the application small and understandable. Detection of AC-3 parameters is not implemented yet.
+The whole mpeg transport handling stuff is kept "as minimal as possible" to
+keep the application small and understandable. Detection of AC-3 stream
+parameters is done in a very lightwight way.
  
 .SH "SEE ALSO"
 .BR apache2 (1), tvheadend (1), mpg123 (1), curl (1)
