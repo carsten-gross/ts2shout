@@ -57,6 +57,9 @@ If set to 1 only an AC-3 stream is wanted. Normal mpeg audio is ignored and
 .B not 
 delivered if this is given.
 
+.SH FILES
+A cache file \fB /var/tmp/ts2shout.cache \fR is created and used. It caches necessary http header parameters for shoutcast streaming to reduce streaming startup time. You can remove this cache file at any time, it will be recreated if needed. 
+
 .SH BUGS
 The whole mpeg transport handling stuff is kept "as minimal as possible" to
 keep the application small and understandable. Detection of AC-3 stream
