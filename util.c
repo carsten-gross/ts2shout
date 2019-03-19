@@ -25,8 +25,16 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <errno.h>
+
 
 #include "ts2shout.h"
+
+#define CACHE_FILENAME "/var/tmp/ts2shout.cache"
+
 
 static const char *channel_type_name[] = {
     FOREACH_CHANNEL_TYPE(GENERATE_STRING)
@@ -104,4 +112,108 @@ unsigned char *utf8(unsigned char *in, unsigned char *out) {
 	return outstart; 
 }
 	
+/* Cache file handling for streaming parameters */
+/* Perhaps we don't need initialization? */
+void init_cache() {
+/*
+	cache_fd = open(CACHE_FILENAME, O_CREAT | O_RDWR ); 
+	if (! cache_fd) {
+		output_logmessage("init_cache() warning: Cannot open cache file %s: %s\n", CACHE_FILENAME, strerror(errno)); 
+	} else {
+		CACHEFILE = fdopen(cache_fd, "r+"); 
+	}
+	return; 
+*/
+}
+
+void add_cache(programm_info_t *global_state) {
 	
+	int cachefd = 0;
+	FILE* CACHEFILE = NULL;
+	int tempfd = 0;
+	FILE * TEMPFILE = NULL;
+	
+	char *tempname = NULL; 
+	/* für getline */
+	size_t t = 0;
+	char *gptr = NULL;
+	int linesize = 0; 
+
+	/* Generate temporary file */
+	tempname = alloca(sizeof(CACHE_FILENAME) + 7);
+	strcpy(tempname, CACHE_FILENAME "XXXXXX"); 
+	mktemp(tempname); 
+	tempfd = open(tempname, O_EXCL|O_CREAT|O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH);
+	TEMPFILE = fdopen(tempfd, "w"); 
+	if (! TEMPFILE) {
+		fprintf(stderr, "TEMPFILE IS NULL!?\n"); 
+	}
+	/* Try to open old file */
+	cachefd = open(CACHE_FILENAME, O_RDONLY);
+	if (cachefd < 0) {
+		output_logmessage("add_cache() warning: Cannot open cache file %s (Creating one): %s\n", CACHE_FILENAME, strerror(errno));
+		fprintf(TEMPFILE, "%s\t%d\t%d\t%d\t%s\n", 
+			global_state->programme,	
+			global_state->br,
+			global_state->sr,
+			global_state->want_ac3,
+			global_state->station_name);
+		fclose(TEMPFILE); 
+		rename(tempname, CACHE_FILENAME);
+	} else {
+		CACHEFILE = fdopen(cachefd, "r");
+		/* Search for line starting with programme */
+		while( (linesize = getline(&gptr, &t, CACHEFILE)) > 0) {
+			if ( (!global_state->programme)	
+				|| (strncmp(global_state->programme, gptr, strlen(global_state->programme)) != 0) ) {
+				/* not equal */
+				fprintf(TEMPFILE, "%s", gptr);
+			} else {
+				/* done after reading everything */
+			}
+		}
+		/* write new output */
+		fprintf(TEMPFILE, "%s\t%u\t%u\t%d\t%s\n", 
+			global_state->programme,	
+			global_state->br,
+			global_state->sr,
+			global_state->want_ac3, 		
+			global_state->station_name); 
+		fclose(CACHEFILE);
+		fclose(TEMPFILE); 
+		rename(tempname, CACHE_FILENAME); 
+	}
+	return;
+}
+
+void fetch_cached_parameters(programm_info_t *global_state) {
+	FILE* CACHEFILE = NULL;
+	/* für getline */
+	size_t t = 0;
+	char *gptr = NULL;
+	int linesize = 0; 
+	int ac3 = 0;
+	CACHEFILE = fopen(CACHE_FILENAME, "r");
+	if (! CACHEFILE) {
+		return; 
+	}
+	if (! global_state->programme) {
+		return; 
+	}
+	while( (linesize = getline(&gptr, &t, CACHEFILE)) > 0) {
+		if (strncmp(global_state->programme, gptr, strlen(global_state->programme)) != 0) {
+			/* not equal */
+		} else {
+			sscanf(gptr, "%s\t%d\t%d\t%d\t%s", global_state->programme, &global_state->br, &global_state->sr, &ac3, global_state->station_name); 
+			if (global_state->want_ac3 == ac3) {
+				output_logmessage("fetch_cached_parameters(): found parameters for programme %s\n", global_state->programme);
+			} else {
+				/* reset, because it's the wrong line if ac3 state is not the same */
+				global_state->sr = 0; global_state->br = 0;
+				strcpy(global_state->station_name, ""); 
+			}
+		}
+	}
+	fclose(CACHEFILE);
+	return; 
+};

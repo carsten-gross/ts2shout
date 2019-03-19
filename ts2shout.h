@@ -225,6 +225,8 @@ typedef struct programm_info_s {
 	uint8_t	info_available;				/* Information available */
  	uint8_t payload_added;				/* Payload is added, no longer scan PAT and PMT */
 	uint8_t	output_payload;				/* Header with information is sent, therefore audiodata can be output (for CGI mode) */
+	uint8_t sdt_fromstream;				/* Station name fetched from stream */
+	uint8_t	cache_written;				/* cache written in current session */
 	char station_name[STR_BUF_SIZE];	/* Name of station (normally only a few bytes) */
 	char stream_title[STR_BUF_SIZE];	/* StreamTitle for shoutcast stream */
 	char old_stream_title[STR_BUF_SIZE]; /* Old StreamTitle, that was given in last session */
@@ -234,6 +236,8 @@ typedef struct programm_info_s {
     uint64_t bytes_streamed_write;		/* Total bytes write to stdout/streamed to application/CGI */
     uint16_t ts_sync_error;				/* Total global number of sync errors */
 	int	programm_id;					/* The transport_stream_id, aka program_id */
+	char *programme;					/* the environment variable PROGRAMMNO (no hassling arround with REDIRECT_ ) */
+	uint8_t	want_ac3;					/* do we want AC-3 output */
 } programm_info_t; 
 
 /* An aggregator, currently used only for EIT (event information table) */
@@ -272,5 +276,8 @@ int add_channel(enum_channel_type channel_type, int pid);
 /* Get nice channel_name */
 const char* channel_name(enum_channel_type channel_type); 
 unsigned char *utf8(unsigned char* in, unsigned char* out); 
+
+void add_cache(programm_info_t* global_state); 
+void fetch_cached_parameters(programm_info_t* global_state); 
 
 #endif

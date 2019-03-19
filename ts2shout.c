@@ -45,7 +45,6 @@ int channel_count=0;      /* Current listen channel count */
 uint8_t shoutcast=1;      /* Send shoutcast headers? */
 uint8_t	logformat=1;      /* Apache compatible output format */
 uint8_t	cgi_mode=0;       /* Are we running as CGI programme? This is set if there is QUERY_STRING set in the environment */ 
-uint8_t ac3_output = 0;	  /* AC-3 Output? */
 
 static const long int mb_conversion = 1024 * 1024;
 
@@ -77,7 +76,7 @@ static void parse_args(int argc, char **argv)
 			shoutcast = 0;
 		}
 		if (strcmp("ac3", argv[i]) == 0) {
-			ac3_output = 1; 
+			global_state->want_ac3 = 1; 
 		}
 	}
 }
@@ -165,8 +164,8 @@ static void extract_pat_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 
 /* Get info about an available media streams (we want mp1/mp2 or - not done yet - AC-3) */
 
-static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned char *start, int want_ac3) {
-	if (! want_ac3) {
+static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned char *start) {
+	if (!global_state->want_ac3) {
 		if (PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x03 /* MPEG 1 audio */
 			|| PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x04 /* MPEG 2 audio */
 			|| PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x0f /* MPEG 2 audio */) {
@@ -234,7 +233,7 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 			/* Search for stream description */
 			while ((pmt_stream_info_offset != NULL) && found_streams_counter < 3) {
 				if (! channel_map[PMT_PID(pmt_stream_info_offset)]) {
-					add_payload_from_pmt(pmt_stream_info_offset, start, ac3_output);
+					add_payload_from_pmt(pmt_stream_info_offset, start);
 					found_streams_counter += 1;
 					if (global_state->payload_added > 0) {
 						pmt_stream_info_offset = NULL;
@@ -351,7 +350,7 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 #ifdef DEBUG
 	if (1) {
 #else 
-	if (strlen(global_state->station_name) == 0) {
+	if (global_state->sdt_fromstream == 0) {
 #endif 
 		if (crc32(start, sdt_table->section_length + 3) != 0) {
 			fprintf(stderr, "SDT: crc32 does not match, calculated %d, expected 0\n", crc32(start, sdt_table->section_length + 3)); 
@@ -389,7 +388,8 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 							utf8((unsigned char*)service_name, utf8_service_name);
 							/* Yes, we want to get information about the programme */
 							output_logmessage("SDT: Stream is station %s from network %s.\n", utf8_service_name, provider_name);
-							strncpy(global_state->station_name, service_name, STR_BUF_SIZE); 
+							strncpy(global_state->station_name, service_name, STR_BUF_SIZE);
+							global_state->sdt_fromstream = 1;
 						}
 					} else {
 						/* If service type is 0xff it's very likely just a stuffing frame without any content */
@@ -599,8 +599,18 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 			chan->buf_used += es_len;
 		}
 	}
-	
-	
+	/* Okay, actually this doesn't fit very well here, but we want to update the 
+	 * cache only if the payload channel is in sync, and we have the SDT ready. 
+	 * we have easy access to the sync data here, therefore we access it 
+	 * here - Perhaps we can move this elsewhere TODO */
+    if ((!global_state->cache_written) &&
+		cgi_mode					   && 
+        global_state->sdt_fromstream   &&
+        chan->synced) {
+		add_cache(global_state); 
+		global_state->cache_written = 1; 
+	}
+
 	// Got enough to send packet and we are allowed to output data
 	if (chan->buf_used > chan->payload_size && global_state->output_payload ) {
 		// Ensure a MPEG Audio frame starts here
@@ -852,7 +862,7 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 			&& global_state->sr > 0) {
 
 			char *content_type = NULL;
-			if (ac3_output) {
+			if (global_state->want_ac3) {
 				content_type = "Content-Type: audio/ac3";
 			} else {
 				content_type = "Content-Type: audio/mpeg";
@@ -913,6 +923,11 @@ void start_curl_download() {
 	}
     header = curl_slist_append(header, user_agent_string);
     int res = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header);
+	if (getenv("REDIRECT_PROGRAMMNO")) {
+		global_state->programme = getenv("REDIRECT_PROGRAMMNO"); 
+	} else {
+		global_state->programme = getenv("PROGRAMMNO");
+	}
 	/* generate URI (TVHEADEND and PROGRAMMNO was checked by calling function) */
 	if (getenv("REDIRECT_TVHEADEND")) {
 		if (strncmp(getenv("REDIRECT_TVHEADEND"), "http://", 7) == 0) {
@@ -927,7 +942,10 @@ void start_curl_download() {
 			snprintf(url, STR_BUF_SIZE, "http://%s/%s", getenv("TVHEADEND"), getenv("PROGRAMMNO"));
 		}
 	}
-    curl_easy_setopt(curl, CURLOPT_URL, url);
+	/* Try to get cached parameters from last session */
+	fetch_cached_parameters(global_state);
+    
+	curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
 	/* Set timeout to avoid hangin processes */
@@ -1064,10 +1082,10 @@ int main(int argc, char **argv)
 			shoutcast = 0;
 		}
 		if (getenv("AC3") && strncmp(getenv("AC3"), "1", 1) == 0) {
-			ac3_output = 1;
+			global_state->want_ac3 = 1;
 		}
 		if (getenv("REDIRECT_AC3") && strncmp(getenv("REDIRECT_AC3"), "1", 1) == 0) {
-			ac3_output = 1;
+			global_state->want_ac3 = 1;
 		}
 	} else {
 		// Parse command line arguments
