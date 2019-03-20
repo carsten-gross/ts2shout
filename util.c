@@ -152,6 +152,7 @@ void add_cache(programm_info_t *global_state) {
 	cachefd = open(CACHE_FILENAME, O_RDONLY);
 	if (cachefd < 0) {
 		output_logmessage("add_cache() warning: Cannot open cache file %s (Creating one): %s\n", CACHE_FILENAME, strerror(errno));
+		fprintf(TEMPFILE, "# programmno\tbitrate\tstreamrate\tac-3?\tstation_name\n");
 		fprintf(TEMPFILE, "%s\t%d\t%d\t%d\t%s\n", 
 			global_state->programme,	
 			global_state->br,
@@ -161,11 +162,14 @@ void add_cache(programm_info_t *global_state) {
 		fclose(TEMPFILE); 
 		rename(tempname, CACHE_FILENAME);
 	} else {
+		int ac3 = 0;
 		CACHEFILE = fdopen(cachefd, "r");
 		/* Search for line starting with programme */
 		while( (linesize = getline(&gptr, &t, CACHEFILE)) > 0) {
+			sscanf(gptr, "%*s\t%*d\t%*d\t%d\t%*s", &ac3);
 			if ( (!global_state->programme)	
-				|| (strncmp(global_state->programme, gptr, strlen(global_state->programme)) != 0) ) {
+				|| (strncmp(global_state->programme, gptr, strlen(global_state->programme)) != 0) 
+				|| (ac3 != global_state->want_ac3) ) {
 				/* not equal */
 				fprintf(TEMPFILE, "%s", gptr);
 			} else {
