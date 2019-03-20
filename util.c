@@ -151,7 +151,7 @@ void add_cache(programm_info_t *global_state) {
 	/* Try to open old file */
 	cachefd = open(CACHE_FILENAME, O_RDONLY);
 	if (cachefd < 0) {
-		output_logmessage("add_cache() warning: Cannot open cache file %s (Creating one): %s\n", CACHE_FILENAME, strerror(errno));
+		output_logmessage("add_cache() warning: Cannot open cache file %s (trying to create): %s\n", CACHE_FILENAME, strerror(errno));
 		fprintf(TEMPFILE, "# programmno\tbitrate\tstreamrate\tac-3?\tstation_name\n");
 		fprintf(TEMPFILE, "%s\t%d\t%d\t%d\t%s\n", 
 			global_state->programme,	
@@ -215,7 +215,7 @@ void fetch_cached_parameters(programm_info_t *global_state) {
 			/* not equal */
 		} else {
 			/* a maximum of 600 characters is absolutly ok and fits into STR_BUF_SIZE */
-			sscanf(gptr, "%600s\t%d\t%d\t%d\t%600s", global_state->programme, &global_state->br, &global_state->sr, &ac3, global_state->station_name); 
+			sscanf(gptr, "%600s\t%d\t%d\t%d\t%600[^\n]", global_state->programme, &global_state->br, &global_state->sr, &ac3, global_state->station_name); 
 			if (global_state->want_ac3 == ac3) {
 				output_logmessage("fetch_cached_parameters(): found parameters for programme %s\n", global_state->programme);
 			} else {
