@@ -29,6 +29,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <unistd.h>
 
 
 #include "ts2shout.h"
@@ -141,9 +142,8 @@ void add_cache(programm_info_t *global_state) {
 
 	/* Generate temporary file */
 	tempname = alloca(sizeof(CACHE_FILENAME) + 7);
-	strcpy(tempname, CACHE_FILENAME "XXXXXX"); 
-	mktemp(tempname); 
-	tempfd = open(tempname, O_EXCL|O_CREAT|O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH);
+	strcpy(tempname, CACHE_FILENAME ".XXXXXX"); 
+	tempfd = mkstemp(tempname); 
 	TEMPFILE = fdopen(tempfd, "w"); 
 	if (! TEMPFILE) {
 		fprintf(stderr, "TEMPFILE IS NULL!?\n"); 
@@ -181,7 +181,13 @@ void add_cache(programm_info_t *global_state) {
 			global_state->station_name); 
 		fclose(CACHEFILE);
 		fclose(TEMPFILE); 
-		rename(tempname, CACHE_FILENAME); 
+		if (rename(tempname, CACHE_FILENAME) < 0) {
+			output_logmessage("add_cache() warning: Cannot rename %s to %s: %s (removing %s anyway)\n", tempname, CACHE_FILENAME, strerror(errno), tempname); 
+			unlink(tempname); 
+		}
+	}
+	if (gptr) {
+		free(gptr);
 	}
 	return;
 }
@@ -204,7 +210,8 @@ void fetch_cached_parameters(programm_info_t *global_state) {
 		if (strncmp(global_state->programme, gptr, strlen(global_state->programme)) != 0) {
 			/* not equal */
 		} else {
-			sscanf(gptr, "%s\t%d\t%d\t%d\t%s", global_state->programme, &global_state->br, &global_state->sr, &ac3, global_state->station_name); 
+			/* a maximum of 600 characters is absolutly ok and fits into STR_BUF_SIZE */
+			sscanf(gptr, "%600s\t%d\t%d\t%d\t%600s", global_state->programme, &global_state->br, &global_state->sr, &ac3, global_state->station_name); 
 			if (global_state->want_ac3 == ac3) {
 				output_logmessage("fetch_cached_parameters(): found parameters for programme %s\n", global_state->programme);
 			} else {
@@ -213,6 +220,9 @@ void fetch_cached_parameters(programm_info_t *global_state) {
 				strcpy(global_state->station_name, ""); 
 			}
 		}
+	}
+	if (gptr) {
+		free(gptr);
 	}
 	fclose(CACHEFILE);
 	return; 
