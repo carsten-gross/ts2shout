@@ -185,21 +185,20 @@ void fetch_cached_parameters(programm_info_t *global_state) {
 	char *gptr = NULL;
 	int linesize = 0; 
 	int ac3 = 0;
+	if (! global_state->programme) {
+		return; 
+	}
 	CACHEFILE = fopen(CACHE_FILENAME, "r");
 	if (! CACHEFILE) {
 		return; 
 	}
-	if (! global_state->programme) {
-		return; 
-	}
 	while( (linesize = getline(&gptr, &t, CACHEFILE)) > 0) {
-		if (strncmp(global_state->programme, gptr, strlen(global_state->programme)) != 0) {
-			/* not equal */
-		} else {
+		if (strncmp(global_state->programme, gptr, strlen(global_state->programme)) == 0) {
 			/* a maximum of 600 characters is absolutly ok and fits into STR_BUF_SIZE */
 			sscanf(gptr, "%600s\t%d\t%d\t%d\t%600[^\n]", global_state->programme, &global_state->br, &global_state->sr, &ac3, global_state->station_name); 
 			if (global_state->want_ac3 == ac3) {
 				output_logmessage("fetch_cached_parameters(): found parameters for programme %s\n", global_state->programme);
+				break;
 			} else {
 				/* reset, because it's the wrong line if ac3 state is not the same */
 				global_state->sr = 0; global_state->br = 0;

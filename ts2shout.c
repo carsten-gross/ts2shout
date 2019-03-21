@@ -805,6 +805,40 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 	/* process the data we've stored from the last run? */
 	unsigned char * buf = contents;
 	
+	/* Do we have to output the HTTP Header? */
+	if (!global_state->output_payload) {
+		/* not all data items were available, check wether they are available now. 
+		 * output the header and START playing audio */
+		if (global_state->station_name 
+			&& strlen(global_state->station_name) > 0 
+			&& global_state->br > 0 
+			&& global_state->sr > 0) {
+
+			char *content_type = NULL;
+			if (global_state->want_ac3) {
+				content_type = "Content-Type: audio/ac3";
+			} else {
+				content_type = "Content-Type: audio/mpeg";
+			}
+			if (shoutcast) {
+				snprintf(header, STR_BUF_SIZE, "%s\n" \
+						"Connection: close\n" \
+						"icy-br: %d\n" \
+						"icy-sr: %d\n" \
+						"icy-name: %s\n" \
+						"icy-metaint: %d\n\n",
+						content_type,
+						global_state->br * 1000, global_state->sr, global_state->station_name, SHOUTCAST_METAINT); 
+			} else {
+				snprintf(header, STR_BUF_SIZE, "%s\n" \
+						"Connection: close\n\n", content_type); 
+			}
+			fwrite(header, strlen(header), 1, stdout); 
+			fflush(stdout); 
+			global_state->output_payload = 1; 
+		}
+	}	
+	
 	/* Do we have data from the last run that we must use for the next one? */
 	if (mem->size > 0) {
 		/* We have a remaining leftover from last curl call. Make a call with a filled up buffer first */
@@ -853,38 +887,6 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 		already_processed += realsize - already_processed; 
 		global_state->bytes_streamed_read += realsize - already_processed;
 	}
-	if (!global_state->output_payload) {
-		/* not all data items were available, check wether they are available now. 
-		 * output the header and START playing audio */
-		if (global_state->station_name 
-			&& strlen(global_state->station_name) > 0 
-			&& global_state->br > 0 
-			&& global_state->sr > 0) {
-
-			char *content_type = NULL;
-			if (global_state->want_ac3) {
-				content_type = "Content-Type: audio/ac3";
-			} else {
-				content_type = "Content-Type: audio/mpeg";
-			}
-			if (shoutcast) {
-				snprintf(header, STR_BUF_SIZE, "%s\n" \
-						"Connection: close\n" \
-						"icy-br: %d\n" \
-						"icy-sr: %d\n" \
-						"icy-name: %s\n" \
-						"icy-metaint: %d\n\n",
-						content_type,
-						global_state->br * 1000, global_state->sr, global_state->station_name, SHOUTCAST_METAINT); 
-			} else {
-				snprintf(header, STR_BUF_SIZE, "%s\n" \
-						"Connection: close\n\n", content_type); 
-			}
-			fwrite(header, strlen(header), 1, stdout); 
-			fflush(stdout); 
-			global_state->output_payload = 1; 
-		}
-	}	
 	if (Interrupted) {
 write_error: 
 		already_processed = 0;

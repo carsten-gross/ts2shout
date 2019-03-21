@@ -224,7 +224,7 @@ typedef struct ts2shout_channel_s {
 typedef struct programm_info_s {
 	uint8_t	info_available;				/* Information available */
  	uint8_t payload_added;				/* Payload is added, no longer scan PAT and PMT */
-	uint8_t	output_payload;				/* Header with information is sent, therefore audiodata can be output (for CGI mode) */
+	uint8_t	output_payload;				/* All header information is known, therefore audiodata can be read and output (for CGI mode) */
 	uint8_t sdt_fromstream;				/* Station name fetched from stream */
 	uint8_t	cache_written;				/* cache written in current session */
 	char station_name[STR_BUF_SIZE];	/* Name of station (normally only a few bytes) */
