@@ -113,29 +113,16 @@ unsigned char *utf8(unsigned char *in, unsigned char *out) {
 	return outstart; 
 }
 	
-/* Cache file handling for streaming parameters */
-/* Perhaps we don't need initialization? */
-void init_cache() {
-/*
-	cache_fd = open(CACHE_FILENAME, O_CREAT | O_RDWR ); 
-	if (! cache_fd) {
-		output_logmessage("init_cache() warning: Cannot open cache file %s: %s\n", CACHE_FILENAME, strerror(errno)); 
-	} else {
-		CACHEFILE = fdopen(cache_fd, "r+"); 
-	}
-	return; 
-*/
-}
-
 void add_cache(programm_info_t *global_state) {
-	
+	/* the existing cache file, name given in define CACHE_FILENAME */
 	int cachefd = 0;
 	FILE* CACHEFILE = NULL;
+	/* a new temporary file with unique name to be renamed to be later the new cache */
 	int tempfd = 0;
 	FILE * TEMPFILE = NULL;
 	
 	char *tempname = NULL; 
-	/* für getline */
+	/* for reading with getline */
 	size_t t = 0;
 	char *gptr = NULL;
 	int linesize = 0; 
@@ -143,24 +130,24 @@ void add_cache(programm_info_t *global_state) {
 	/* Generate temporary file */
 	tempname = alloca(sizeof(CACHE_FILENAME) + 7);
 	strcpy(tempname, CACHE_FILENAME ".XXXXXX"); 
-	tempfd = mkstemp(tempname); 
-	TEMPFILE = fdopen(tempfd, "w"); 
-	if (! TEMPFILE) {
-		fprintf(stderr, "TEMPFILE IS NULL!?\n"); 
+	tempfd = mkstemp(tempname);
+	if (tempfd <= 0) {
+		output_logmessage("add_cache() warning: Cannot create temporary file %s (ignored): %s\n", tempname, strerror(errno)); 
+		return; 
 	}
+	fchmod(tempfd, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH); 
+	TEMPFILE = fdopen(tempfd, "w"); 
+	fprintf(TEMPFILE, "# programmno\tbitrate\tstreamrate\tac-3?\tstation_name\n");
+	fprintf(TEMPFILE, "%s\t%d\t%d\t%d\t%s\n", 
+		global_state->programme,	
+		global_state->br,
+		global_state->sr,
+		global_state->want_ac3,
+		global_state->station_name);
 	/* Try to open old file */
 	cachefd = open(CACHE_FILENAME, O_RDONLY);
 	if (cachefd < 0) {
 		output_logmessage("add_cache() warning: Cannot open cache file %s (trying to create): %s\n", CACHE_FILENAME, strerror(errno));
-		fprintf(TEMPFILE, "# programmno\tbitrate\tstreamrate\tac-3?\tstation_name\n");
-		fprintf(TEMPFILE, "%s\t%d\t%d\t%d\t%s\n", 
-			global_state->programme,	
-			global_state->br,
-			global_state->sr,
-			global_state->want_ac3,
-			global_state->station_name);
-		fclose(TEMPFILE); 
-		rename(tempname, CACHE_FILENAME);
 	} else {
 		int ac3 = 0;
 		CACHEFILE = fdopen(cachefd, "r");
@@ -169,26 +156,21 @@ void add_cache(programm_info_t *global_state) {
 			sscanf(gptr, "%*s\t%*d\t%*d\t%d\t%*s", &ac3);
 			if ( (!global_state->programme)	
 				|| (strncmp(global_state->programme, gptr, strlen(global_state->programme)) != 0) 
-				|| (ac3 != global_state->want_ac3) ) {
-				/* not equal */
-				fprintf(TEMPFILE, "%s", gptr);
+				|| (ac3 != global_state->want_ac3) 
+				)  {
+				/* not equal, and not top line */
+				if (strncmp("# programmno", gptr, strlen("# programmno")) != 0) {
+					fprintf(TEMPFILE, "%s", gptr);	
+				}
 			} else {
 				/* done after reading everything */
 			}
 		}
-		/* write new output */
-		fprintf(TEMPFILE, "%s\t%u\t%u\t%d\t%s\n", 
-			global_state->programme,	
-			global_state->br,
-			global_state->sr,
-			global_state->want_ac3, 		
-			global_state->station_name); 
-		fclose(CACHEFILE);
-		fclose(TEMPFILE); 
-		if (rename(tempname, CACHE_FILENAME) < 0) {
-			output_logmessage("add_cache() warning: Cannot rename %s to %s: %s (removing %s anyway)\n", tempname, CACHE_FILENAME, strerror(errno), tempname); 
-			unlink(tempname); 
-		}
+	}
+	fclose(TEMPFILE); 
+	if (rename(tempname, CACHE_FILENAME) < 0) {
+		output_logmessage("add_cache() warning: Cannot rename %s to %s: %s (removing %s anyway)\n", tempname, CACHE_FILENAME, strerror(errno), tempname); 
+		unlink(tempname); 
 	}
 	if (gptr) {
 		free(gptr);
