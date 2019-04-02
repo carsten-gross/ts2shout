@@ -104,7 +104,7 @@ void output_logmessage(const char *fmt, ... ) {
 	struct timespec t; 
 	clock_gettime(CLOCK_REALTIME, &t); 
 	strftime(current_time_fmt, STR_BUF_SIZE, "%a %b %d %H:%M:%S.%%6.6d %Y", localtime(&t.tv_sec));
-	sprintf(current_time, current_time_fmt, (t.tv_nsec / 1000)); 
+	snprintf(current_time, STR_BUF_SIZE, current_time_fmt, (t.tv_nsec / 1000)); 
 	va_start(argp, fmt);
 	vsnprintf(s, STR_BUF_SIZE, fmt, argp); 
 	va_end(argp);
@@ -194,7 +194,12 @@ static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned
 					global_state->payload_added = 1; 
 				}
 			} else {
-				/* TODO AC-3 stream descriptor found in first descriptor */
+#ifdef DEBUG
+				fprintf(stderr, "private-stream found, first stream descriptor 0x%x\n", PMT_STREAM_DESCRIPTOR_TAG(first_stream_descriptor));
+#endif 
+				output_logmessage("add_payload_from_pmt(): Found AC-3 audio stream in PID %d\n", PMT_PID(pmt_stream_info_offset));
+				add_channel(CHANNEL_TYPE_PAYLOAD, PMT_PID(pmt_stream_info_offset));
+				global_state->payload_added = 1;
 			}
 		}
 	}
@@ -613,15 +618,6 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 
 	// Got enough to send packet and we are allowed to output data
 	if (chan->buf_used > chan->payload_size && global_state->output_payload ) {
-		// Ensure a MPEG Audio frame starts here
-		// this makes problems with programmes like "Radio Bob!" (44100 kHz, 256 kBit/s bitrate)
-		// if (chan->buf_ptr[0] != 0xFF) {
-		// 	output_logmessage("extract_pes_payload: Warning, lost MPEG Audio sync for PID %d.\n", chan->pid);
-		//	chan->synced = 0;
-		//	chan->buf_used = 0;
-		//	return bytes_written;
-		// }
-		
 		#ifndef DEBUG 
 		/* If Icy-MetaData is set to 1 a shoutcast StreamTitle is required all 8192 */ 
 		/* (SHOUTCAST_METAINT) Bytes */
@@ -650,10 +646,11 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 				char streamtitle[STR_BUF_SIZE]; 
 				/* Only output StreamTitle if it's different or for the first time */
 				if (strcmp(global_state->stream_title, global_state->old_stream_title) != 0) {
-					snprintf(streamtitle, STR_BUF_SIZE -1, "StreamTitle='%s';", global_state->stream_title);
+					/* Maximum of 2000 characters! */
+					snprintf(streamtitle, STR_BUF_SIZE - 1, "StreamTitle='%.2000s';", global_state->stream_title);
 					strcpy(global_state->old_stream_title, global_state->stream_title); 
 				} else {
-					memset(streamtitle, 0, strlen(global_state->stream_title)); 
+					memset(streamtitle, 0, strlen(global_state->stream_title) + 1); 
 				}
 				bytes = ((strlen(streamtitle))>>4) + (strlen(streamtitle) > 0?1:0); 
 				/* Shift right by 4 bit => Divide by 16, and add 1 to get minimum possible length. 
@@ -821,11 +818,12 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 				content_type = "Content-Type: audio/mpeg";
 			}
 			if (shoutcast) {
-				snprintf(header, STR_BUF_SIZE, "%s\n" \
+				/* Strlen: of all the static stuff: 114 Byte */
+				snprintf(header, STR_BUF_SIZE, "%.50s\n" \
 						"Connection: close\n" \
 						"icy-br: %d\n" \
 						"icy-sr: %d\n" \
-						"icy-name: %s\n" \
+						"icy-name: %.120s\n" \
 						"icy-metaint: %d\n\n",
 						content_type,
 						global_state->br * 1000, global_state->sr, global_state->station_name, SHOUTCAST_METAINT); 
@@ -913,14 +911,15 @@ void start_curl_download() {
     struct curl_slist *header = NULL;
 	/* We only want mpeg transport */
     header = curl_slist_append(header, "Accept: audio/mp2t");
+	/* Limit headers to a length that makes sense */
 	if (getenv("HTTP_USER_AGENT")) {
-		snprintf(user_agent_string, STR_BUF_SIZE, "User-Agent: ts2shout for %s", getenv("HTTP_USER_AGENT")); 
+		snprintf(user_agent_string, STR_BUF_SIZE, "User-Agent: ts2shout for %.200s", getenv("HTTP_USER_AGENT")); 
 	} else {
 		snprintf(user_agent_string, STR_BUF_SIZE, "User-Agent: ts2shout");
 	}
 	if (getenv("REMOTE_ADDR")) {
 		char s[STR_BUF_SIZE];
-		sprintf(s, "Forwarded: by \"%s\"; for \"%s\"; proto=http", "127.0.0.1", getenv("REMOTE_ADDR")); 
+		snprintf(s, STR_BUF_SIZE, "Forwarded: by \"%s\"; for \"%.200s\"; proto=http", "127.0.0.1", getenv("REMOTE_ADDR")); 
 		header = curl_slist_append(header, s);
 	}
     header = curl_slist_append(header, user_agent_string);
@@ -930,19 +929,27 @@ void start_curl_download() {
 	} else {
 		global_state->programme = getenv("PROGRAMMNO");
 	}
+	char *escaped_programmno = curl_easy_escape(curl, global_state->programme, 0); 
+	if (! escaped_programmno) {
+		output_logmessage("curl_easy_escape() on %s failed! Aborting\n", global_state->programme);
+		exit(1);
+	}
 	/* generate URI (TVHEADEND and PROGRAMMNO was checked by calling function) */
 	if (getenv("REDIRECT_TVHEADEND")) {
 		if (strncmp(getenv("REDIRECT_TVHEADEND"), "http://", 7) == 0) {
-			snprintf(url, STR_BUF_SIZE, "%s/%s", getenv("REDIRECT_TVHEADEND"), getenv("REDIRECT_PROGRAMMNO")); 
+			snprintf(url, STR_BUF_SIZE, "%s/%s", getenv("REDIRECT_TVHEADEND"), escaped_programmno); 
 		} else {
-			snprintf(url, STR_BUF_SIZE, "http://%s/%s", getenv("REDIRECT_TVHEADEND"), getenv("REDIRECT_PROGRAMMNO"));
+			snprintf(url, STR_BUF_SIZE, "http://%s/%s", getenv("REDIRECT_TVHEADEND"), escaped_programmno);
 		}
 	} else {
 		if (strncmp(getenv("TVHEADEND"), "http://", 7) == 0) {
-			snprintf(url, STR_BUF_SIZE, "%s/%s", getenv("TVHEADEND"), getenv("PROGRAMMNO")); 
+			snprintf(url, STR_BUF_SIZE, "%s/%s", getenv("TVHEADEND"), escaped_programmno); 
 		} else {
-			snprintf(url, STR_BUF_SIZE, "http://%s/%s", getenv("TVHEADEND"), getenv("PROGRAMMNO"));
+			snprintf(url, STR_BUF_SIZE, "http://%s/%s", getenv("TVHEADEND"), escaped_programmno);
 		}
+	}
+	if ( escaped_programmno) {
+		curl_free(escaped_programmno);
 	}
 	/* Try to get cached parameters from last session */
 	fetch_cached_parameters(global_state);

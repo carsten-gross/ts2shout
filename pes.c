@@ -42,7 +42,7 @@ unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, ts
 	    PES_PACKET_SYNC_BYTE2(buf) != 0x00 ||
 	    PES_PACKET_SYNC_BYTE3(buf) != 0x01 )
 	{
-		fprintf(stderr, "Invalid PES header (pid: %d).\n", chan->pid);
+		output_logmessage("Invalid PES header (pid: %d).\n", chan->pid);
 		return 0;
 	}
 	
@@ -52,14 +52,14 @@ unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, ts
 	{
 		if (stream_id != 0xbd 
 			&& ( stream_id < 0xC0 || stream_id > 0xDF )  ) {
-			fprintf(stderr, "Ignoring non-mpegaudio stream ID 0x%x (pid: %d).\n", stream_id, chan->pid);
+			output_logmessage("Ignoring non-mpegaudio stream ID 0x%x (pid: %d).\n", stream_id, chan->pid);
 			return 0;
 		}
 		if (chan->pes_stream_id == 0) {
 			// keep the first stream we see
 			chan->pes_stream_id = stream_id;	
 		} else {
-			fprintf(stderr, "Ignoring additional audio stream ID 0x%x (pid: %d).\n", stream_id, chan->pid);
+			output_logmessage("Ignoring additional audio stream ID 0x%x (pid: %d).\n", stream_id, chan->pid);
 			return 0;
 		}
 	
@@ -67,14 +67,14 @@ unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, ts
 	// Check PES Extension header 
 	if( PES_PACKET_SYNC_CODE(buf) != 0x2 )
 	{
-		fprintf(stderr, "Error: invalid sync code PES extension header (pid: %d).\n", chan->pid);
+		output_logmessage("Error: invalid sync code PES extension header (pid: %d).\n", chan->pid);
 		return 0;
 	}
 
 	// Reject scrambled packets
 	if( PES_PACKET_SCRAMBLED(buf) )
 	{
-		fprintf(stderr, "Error: PES payload is scrambled (pid: %d).\n", chan->pid);
+		output_logmessage("Error: PES payload is scrambled (pid: %d).\n", chan->pid);
 		return 0;
 	}
 
