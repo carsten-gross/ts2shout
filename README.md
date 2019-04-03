@@ -58,30 +58,27 @@ If shoutcast Streamtitles should be used inside the stream is autodetected by
 the Icy-MetaData header given in the http request. 
 
 <pre>
-	&lt;Location /radio&gt;
+	<Location /radio>
 		Order Deny,Allow
 		Deny from all
 		Allow from 172.16.0.0/24
 		Allow from ::1
 		Allow from 127.0.0.1
-		&lt;If "%{HTTP:Icy-MetaData} in {'1'}"&gt;
-			SetEnv "MetaData" "1"
-		&lt;/If&gt;
-		SetEnv TVHEADEND "http://localhost:9981/stream/channelnumber"
-		# All radio stations. One line for every station
-		# the first name is the uri, PROGRAMMNO is the environment
-		# setting needed by ts2shout. 
-		# A radio is accessed with the URI local part for example
-		# /radio/swr1bw
-		# this fetches the mpeg transport from http://localhost:9981/stream/channelnumber/813
-		SetEnvIf REQUEST_URI "swr1bw$" PROGRAMMNO=813
-		SetEnvIf REQUEST_URI "swr2$" PROGRAMMNO=815
-		# As many as you need
-		SetEnvIf REQUEST_URI "drs2$" PROGRAMMNO=913
-		SetEnvIf REQUEST_URI "drs3$" PROGRAMMNO=914
+		<If "%{HTTP:Icy-MetaData} in {'1'}">
+				SetEnv "MetaData" "1"
+		</If>
+		SetEnv TVHEADEND "http://localhost:9981/stream/channelname"
+		# The radio stations are called e.g. 
+		# /radio/SWR1%20BW 
+		# if you want to fetch a radio channel named "SWR1 BW" in tvheadend
+		# Only A-Z/a-z/0-9, space and "-" are possible due to the regex.
+		# Change names containing other characters in tvheadend frontend 
+		# You can also use http://localhost:9981/stream/channelnumber 
+		# and use channel numbers
+		SetEnvIf REQUEST_URI "([-A-Za-z0-9_ ]*)$" PROGRAMMNO=$1
 		Options +ExecCGI
 		Action ts2shout /cgi-bin/ts2shout virtual
 		SetHandler ts2shout
-	&lt;/Location&gt;
+	</Location>
 </pre>
 
