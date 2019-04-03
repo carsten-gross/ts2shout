@@ -58,15 +58,15 @@ If shoutcast Streamtitles should be used inside the stream is autodetected by
 the Icy-MetaData header given in the http request. 
 
 <pre>
-	<Location /radio>
+	&lt;Location /radio&gt;
 		Order Deny,Allow
 		Deny from all
 		Allow from 172.16.0.0/24
 		Allow from ::1
 		Allow from 127.0.0.1
-		<If "%{HTTP:Icy-MetaData} in {'1'}">
+		&lt;If "%{HTTP:Icy-MetaData} in {'1'}"&gt;
 				SetEnv "MetaData" "1"
-		</If>
+		&lt;/If&gt;
 		SetEnv TVHEADEND "http://localhost:9981/stream/channelname"
 		# The radio stations are called e.g. 
 		# /radio/SWR1%20BW 
@@ -79,6 +79,6 @@ the Icy-MetaData header given in the http request.
 		Options +ExecCGI
 		Action ts2shout /cgi-bin/ts2shout virtual
 		SetHandler ts2shout
-	</Location>
+	&lt;/Location&gt;
 </pre>
 
