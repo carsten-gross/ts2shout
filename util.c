@@ -153,7 +153,7 @@ void add_cache(programm_info_t *global_state) {
 		CACHEFILE = fdopen(cachefd, "r");
 		/* Search for line starting with programme */
 		while( (linesize = getline(&gptr, &t, CACHEFILE)) > 0) {
-			sscanf(gptr, "%*s\t%*d\t%*d\t%d\t%*s", &ac3);
+			sscanf(gptr, "%*[^\t]\t%*d\t%*d\t%d\t%*s", &ac3);
 			if ( (!global_state->programme)	
 				|| (strncmp(global_state->programme, gptr, strlen(global_state->programme)) != 0) 
 				|| (ac3 != global_state->want_ac3) 
@@ -195,7 +195,7 @@ void fetch_cached_parameters(programm_info_t *global_state) {
 	while( (linesize = getline(&gptr, &t, CACHEFILE)) > 0) {
 		if (strncmp(global_state->programme, gptr, strlen(global_state->programme)) == 0) {
 			/* a maximum of 600 characters is absolutly ok and fits into STR_BUF_SIZE */
-			sscanf(gptr, "%600s\t%d\t%d\t%d\t%600[^\n]", global_state->programme, &global_state->br, &global_state->sr, &ac3, global_state->station_name); 
+			sscanf(gptr, "%600[^\t]\t%d\t%d\t%d\t%600[^\n]", global_state->programme, &global_state->br, &global_state->sr, &ac3, global_state->station_name); 
 			if (global_state->want_ac3 == ac3) {
 				output_logmessage("fetch_cached_parameters(): found parameters for programme %s\n", global_state->programme);
 				break;
