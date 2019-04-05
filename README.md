@@ -75,6 +75,8 @@ the Icy-MetaData header given in the http request.
 		# Change names containing other characters in tvheadend frontend 
 		# You can also use http://localhost:9981/stream/channelnumber 
 		# and use channel numbers
+		# If you prepend "°" you'll get an AC3 stream if available
+		SetEnvIf REQUEST_URI "°([-A-Za-z0-9_ ]*)$" PROGRAMMNO=$1 AC3=1
 		SetEnvIf REQUEST_URI "([-A-Za-z0-9_ ]*)$" PROGRAMMNO=$1
 		Options +ExecCGI
 		Action ts2shout /cgi-bin/ts2shout virtual
