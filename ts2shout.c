@@ -149,6 +149,8 @@ static void extract_pat_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	/* Add PMT if not already there */
 	if (! channel_map[PAT_PROGRAMME_PMT(programmes)] ) {
 		if (crc32(start, PAT_SECTION_LENGTH(start) + 3) == 0) {
+			global_state->transport_stream_id = PAT_TRANSPORT_STREAM_ID(start);
+			output_logmessage("extract_pat_payload(): programme has transport_stream_id: %d\n", global_state->transport_stream_id ); 
 			add_channel(CHANNEL_TYPE_PMT, PAT_PROGRAMME_PMT(programmes));
 			global_state->programm_id = PAT_TRANSPORT_STREAM_ID(start);
 		} else {
@@ -261,12 +263,12 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	}
 }
 
-uint8_t collect_continuation(section_aggregate_t* aggregation, unsigned char *pes_ptr, size_t pes_len, int start_of_pes, enum_channel_type type) {
+uint8_t collect_continuation(section_aggregate_t* aggregation, unsigned char *pes_ptr, size_t pes_len, int start_of_pes, unsigned char* ts_full_frame, enum_channel_type type) {
 	unsigned char* start = pes_ptr + start_of_pes;
 	/* If an information block doesn't fit into an mpeg-ts frame it is continued in a next frame. The information is 
 	 * directly attached after the PID (TS_HEADER_SIZE = 4 Byte offset). It is possible that there is a multi-ts-frame continuation 
 	 * we have to calculate a lot */
- 	if (aggregation->continuation > 0) {
+ 	if (aggregation->buffer_valid == 0 && aggregation->continuation > 0 && (TS_PACKET_PAYLOAD_START(ts_full_frame) == 0) ) {
 #ifdef DEBUG
 		fprintf(stderr, "%s: continued frame: offset: %d, counter: %d, section_length: %d\n", 
 			channel_name(type), aggregation->offset, aggregation->counter, aggregation->section_length); 
@@ -277,7 +279,8 @@ uint8_t collect_continuation(section_aggregate_t* aggregation, unsigned char *pe
 		memcpy(aggregation->buffer + aggregation->offset - TS_HEADER_SIZE, start, TS_PACKET_SIZE - start_of_pes);
 		aggregation->offset += TS_PACKET_SIZE - TS_HEADER_SIZE; /* Offset for next TS packet */
 		aggregation->counter += 1;
-		if (aggregation->offset - TS_HEADER_SIZE >= aggregation->section_length) {
+		/* 4 = size of crc32 (not included in section length) */
+		if ((aggregation->offset - TS_HEADER_SIZE - 4) >= aggregation->section_length) {
 			/* Section is finished, finally */
 			aggregation->buffer_valid = 1; 
 			aggregation->continuation = 0; 
@@ -285,7 +288,13 @@ uint8_t collect_continuation(section_aggregate_t* aggregation, unsigned char *pe
 			fprintf(stderr, "%s: finished multi-frame table after offset %d, counter: %d\n", 
 				channel_name(type), aggregation->offset, aggregation->counter); 
 #endif 
+			return 1; 
 		} else {
+			if ( TS_PACKET_PAYLOAD_START(ts_full_frame) > 0) {
+			#ifdef DEBUG
+				fprintf(stderr, "%s: I'm at offset %d, and a new payload start is there... interrupting\n", channel_name(type), aggregation->offset); 
+			#endif 
+			}
 			// This should not happen, because the standard recommends a maximum size of ~4K */
 			if (aggregation->offset + TS_PACKET_SIZE - TS_HEADER_SIZE > EIT_BUF_SIZE ) {
 				output_logmessage("collect_continuation: Maximum Data-Chunk Size of %d characters " \
@@ -299,8 +308,8 @@ uint8_t collect_continuation(section_aggregate_t* aggregation, unsigned char *pe
 		/* Move start of packet to helper buffer for long frames */
 	} 
 	if ( aggregation->buffer_valid == 0) {
-		/* A short EIT frame < TS_PACKET_SIZE length, take care of the crc32! */
-		if ( aggregation->continuation == 0 && EIT_SECTION_LENGTH(start) < (TS_PACKET_SIZE - TS_HEADER_SIZE - 3 )   ) {
+		/* A short EIT frame < TS_PACKET_SIZE length, take care of the crc32 (not included in section_length)! */
+		if ( aggregation->continuation == 0 && EIT_SECTION_LENGTH(start) < (TS_PACKET_SIZE - TS_HEADER_SIZE - 4 )   ) {
 			aggregation->buffer_valid = 1; 
 			aggregation->continuation = 0;
 			aggregation->counter = 1; 
@@ -311,8 +320,10 @@ uint8_t collect_continuation(section_aggregate_t* aggregation, unsigned char *pe
 			fprintf (stderr, "%s: Single frame-table 0x%2.2x (last table 0x%2.2x), Section-Length: %d (%d), Section: %d\n",
 				channel_name(type), EIT_PACKET_TABLEID(start), EIT_PACKET_LAST_TABLEID(start), EIT_SECTION_LENGTH(start), TS_PACKET_SIZE - start_of_pes, EIT_SECTION_NUMBER(start)); 
 	#endif 
-		} else if ( ( EIT_SECTION_LENGTH(start) >= (TS_PACKET_SIZE - TS_HEADER_SIZE - 3)) && ( 0 == aggregation->continuation ) ) {
-			/* A long frame, will be continued in next frame */
+		} else if ( ( EIT_SECTION_LENGTH(start) >= (TS_PACKET_SIZE - TS_HEADER_SIZE - 4)) 
+					&& ( 0 == aggregation->continuation )
+					&& (TS_PACKET_PAYLOAD_START(ts_full_frame) > 0) ) {
+			/* Start of a long frame, will be continued in next frame */
 			aggregation->buffer_valid = 0; /* It's not valid @ the moment */
 			aggregation->continuation = 1;
 			aggregation->counter = 1;
@@ -334,11 +345,11 @@ uint8_t collect_continuation(section_aggregate_t* aggregation, unsigned char *pe
 	return 0;
 }
 
-static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes ) {
+static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes, unsigned char* ts_full_frame) {
     unsigned char* start = NULL;
     start = pes_ptr + start_of_pes;
 	/* collect up continuation frames */
-	if (! collect_continuation(sdt_table, pes_ptr, pes_len, start_of_pes, CHANNEL_TYPE_SDT)) {
+	if (! collect_continuation(sdt_table, pes_ptr, pes_len, start_of_pes, ts_full_frame, CHANNEL_TYPE_SDT)) {
 		return;
 	}
 	start = sdt_table->buffer; 
@@ -358,8 +369,9 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	if (global_state->sdt_fromstream == 0) {
 #endif 
 		if (crc32(start, sdt_table->section_length + 3) != 0) {
-			fprintf(stderr, "SDT: crc32 does not match, calculated %d, expected 0\n", crc32(start, sdt_table->section_length + 3)); 
-
+		#ifdef DEBUG
+			output_logmessage("SDT: crc32 does not match, calculated %d, expected 0\n", crc32(start, sdt_table->section_length + 3));
+		#endif 
 		} else {
 			if ( PMT_TABLE_ID(start) == 0x42 ) {
 				/* Table 0x42 contains information about current stream, we only want programm "running" (see mpeg standard for this hardcoded stuff) */
@@ -369,9 +381,6 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 					char service_name[STR_BUF_SIZE];
 					uint8_t service_name_length = description_content[SDT_DC_PROVIDER_NAME_LENGTH(description_content) + 4]; 
 					unsigned char * tmp = description_content + SDT_DC_PROVIDER_NAME_LENGTH(description_content) + 5; 
-					// fprintf(stderr, "SDT: Dumping full buffer .. \n");
-					// write(2, start, sdt_table->section_length); 
-					// fprintf(stderr, "\n");
 					/* Service 0x02, 0x0A, 0x07: (Digital) Radio */
 					if (SDT_DC_SERVICE_TYPE(description_content) == 0x2
 						|| SDT_DC_SERVICE_TYPE(description_content) == 0x0a 
@@ -412,7 +421,7 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 
 
 
-static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes )
+static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes, unsigned char* ts_full_frame )
 {
 	unsigned char* start = NULL;
 	char short_description[STR_BUF_SIZE]; 
@@ -423,13 +432,15 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	
 	start = pes_ptr + start_of_pes;
 	/* collect up continuation frames */
-	if (! collect_continuation(eit_table, pes_ptr, pes_len, start_of_pes, CHANNEL_TYPE_EIT)) {
+	if (! collect_continuation(eit_table, pes_ptr, pes_len, start_of_pes, ts_full_frame, CHANNEL_TYPE_EIT)) {
 		return;
 	}
 	/* ok, frame should be valid, repoint start */
 	start = eit_table->buffer;
 #ifdef DEBUG
 	if (eit_table->buffer_valid == 1) {
+		/* Now check crc32, because we want to do something with the data */
+		fprintf(stderr, "EIT: crc32 %s (%d, l: %d)\n",(  crc32(start, EIT_SECTION_LENGTH(start)+3)== 0?"OK":"FAIL"), crc32(start, EIT_SECTION_LENGTH(start)+3), EIT_SECTION_LENGTH(start)+3); 
 		// fprintf(stderr, "EIT: Dumping full buffer .. \n");
 		// write(2, eit_table->buffer, eit_table->section_length); 
 		// fprintf(stderr, "\n");
@@ -452,8 +463,8 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 			EIT_LAST_SECTION_NUMBER(start),
 			EIT_SECTION_LENGTH(start));
 #endif 
-		/* 0x4d = Short event descriptor found */
-		if (EIT_DESCRIPTOR_TAG(description_start) == 0x4d) {
+		/* 0x4d = Short event descriptor found, transport_stream matches */
+		if (EIT_DESCRIPTOR_TAG(description_start) == 0x4d && EIT_TRANSPORT_STREAM_ID(start) == global_state->transport_stream_id ) {
 			/* Now calculate crc32, because we want to do something with the data */
 			if (crc32(start, EIT_SECTION_LENGTH(start)+3) != 0) {
 				#ifdef DEBUG
@@ -1041,11 +1052,11 @@ int16_t process_ts_packet( unsigned char * buf )
 				extract_pat_payload(pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
 				break;
 			case CHANNEL_TYPE_EIT: 
-				extract_eit_payload ( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
+				extract_eit_payload ( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf), buf );
 				// global_state->ts_sync_error = 0; /* no pid_change() because it resets the EIT stuff */
 				break;
 			case CHANNEL_TYPE_SDT: 
-				extract_sdt_payload ( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
+				extract_sdt_payload ( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf), buf );
 				break;
 			case CHANNEL_TYPE_PMT: 
 				extract_pmt_payload ( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );

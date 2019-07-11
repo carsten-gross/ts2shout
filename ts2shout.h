@@ -238,6 +238,7 @@ typedef struct programm_info_s {
 	int	programm_id;					/* The transport_stream_id, aka program_id */
 	char *programme;					/* the environment variable PROGRAMMNO (no hassling arround with REDIRECT_ ) */
 	uint8_t	want_ac3;					/* do we want AC-3 output */
+	int32_t	transport_stream_id;		/* The transport stream id of the wanted programm stream (important for EIT/SDT scan) */
 } programm_info_t; 
 
 /* An aggregator, currently used only for EIT (event information table) */
