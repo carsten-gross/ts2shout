@@ -79,6 +79,9 @@ static void parse_args(int argc, char **argv)
 		if (strcmp("ac3", argv[i]) == 0) {
 			global_state->want_ac3 = 1; 
 		}
+		if (strcmp("rds", argv[i]) == 0) {
+			global_state->prefer_rds = 1; 
+		}
 	}
 }
 
@@ -424,6 +427,9 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 
 static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes, unsigned char* ts_full_frame )
 {
+	if (global_state->found_rds > 0) {
+		return; 
+	}
 	unsigned char* start = NULL;
 	char short_description[STR_BUF_SIZE]; 
 	char text_description[STR_BUF_SIZE]; 
@@ -432,6 +438,8 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	memset(text_description, 0, STR_BUF_SIZE); 
 	
 	start = pes_ptr + start_of_pes;
+
+
 	/* collect up continuation frames */
 	if (! collect_continuation(eit_table, pes_ptr, pes_len, start_of_pes, ts_full_frame, CHANNEL_TYPE_EIT)) {
 		return;
@@ -526,7 +534,7 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 				if (0 != strcmp(tmp_title, global_state->stream_title)) {
 					// It's needed in iso8859-1 for StreamTitle, but in UTF-8 for logging
 					unsigned char utf8_message[STR_BUF_SIZE];
-					strcpy(global_state->stream_title, tmp_title); 
+					strcpy(global_state->stream_title, tmp_title);
 					output_logmessage("EIT: Current transmission `%s'\n", utf8((unsigned char*)short_description, utf8_message)); 
 				}
 			} else {
@@ -1109,11 +1117,18 @@ int main(int argc, char **argv)
 		if (getenv("REDIRECT_AC3") && strncmp(getenv("REDIRECT_AC3"), "1", 1) == 0) {
 			global_state->want_ac3 = 1;
 		}
+		if (getenv("RDS") && strncmp(getenv("RDS"), "1", 1) == 0) {
+			global_state->prefer_rds = 1;
+		}
+		if (getenv("REDIRECT_RDS") && strncmp(getenv("REDIRECT_RDS"), "1", 1) == 0) {
+			global_state->prefer_rds = 1;
+		}
 	} else {
 		// Parse command line arguments
 		parse_args( argc, argv );
 	} 
 	init_structures();
+	init_rds(); 
 	output_logmessage("Streaming %s in %s mode.\n", (shoutcast?"with shoutcast StreamTitles":"without shoutcast support, audio only"), 
 		(cgi_mode?"CGI":"FILTER"));
 	// Setup signal handlers

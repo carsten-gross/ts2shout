@@ -24,5 +24,5 @@
 
 // rda_data_scanner
 void rds_data_scan( ts2shout_channel_t * chan);
-
+void init_rds(); 
 #endif

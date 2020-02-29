@@ -238,6 +238,8 @@ typedef struct programm_info_s {
 	int	programm_id;					/* The transport_stream_id, aka program_id */
 	char *programme;					/* the environment variable PROGRAMMNO (no hassling arround with REDIRECT_ ) */
 	uint8_t	want_ac3;					/* do we want AC-3 output */
+	uint8_t prefer_rds;					/* do we prefer RDS  - instead of EPG? (only if there is RDS) */
+	uint8_t found_rds;					/* We found RDS, don't use EIT any longer */
 	int32_t	transport_stream_id;		/* The transport stream id of the wanted programm stream (important for EIT/SDT scan) */
 } programm_info_t; 
 
@@ -250,18 +252,6 @@ typedef struct section_aggregate_s {
 	uint16_t	section_length;		/* The section length as found in the first ts packet */
 	uint8_t buffer[EIT_BUF_SIZE];
 } section_aggregate_t; 
-
-/* This is totally out of control - RDS - radio data system 
- * We are back at it, after > 25 years 
- * Please see http://www.siski.de/~carsten/rds-dekoder.html */
-typedef struct rds_data_s {
-	char ps[9];						/* Station */
-	char radiotext1[161];			/* As it was in former time, 160 Byte Radiotext */
-	char radiotext2[161];			/* As it was in former time, 160 Byte Radiotext */
-	char interpret[161];			/* There is a special mode in "radiotext+" to submit artist */
-	char titel[161];				/* And also a special mode for music titles */
-	/* To be extended */
-} rds_data_t; 
 
 /* crc32.c */
 uint32_t crc32 (unsigned char *data, int len); 

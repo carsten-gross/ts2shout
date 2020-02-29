@@ -2,7 +2,7 @@
 .SH NAME
 .B ts2shout - Convert a MPEG transport stream to shoutcast, plain mpeg or AC-3 audio
 .SH SYNOPSIS
-.B t2shout [noshout] [ac3]
+.B t2shout [noshout] [ac3] [rds] 
 .sp
 .B cat mpeg-transport.ts | ts2shout noshout > audio.mpeg
 .sp
@@ -37,6 +37,9 @@ write a native mpeg stream, not a shoutcast media stream
 .B ac3		
 write the ac3 stream, not the mpeg audio.
 
+.B rds		
+if available, prefer RDS data over MPEG EIT (EPG data)
+
 .SH ENVIRONMENT
 The Environment variables determine whether the application runs in filter or in CGI mode.
 .sp
@@ -56,6 +59,10 @@ If set to 1 the output should be done shoutcast compatible. This flag should onl
 If set to 1 only an AC-3 stream is wanted. Normal mpeg audio is ignored and 
 .B not 
 delivered if this is given.
+.sp
+.B RDS
+If set to 1 the mpeg stream is scannend for RDS data. If found it is preferred over MPEG EIT. This is supported by DVB-S streams from germany and switzerland (NOT by austria)
+.sp
 
 .SH FILES
 A cache file \fB /var/tmp/ts2shout.cache \fR is created and used. It caches necessary http header parameters for shoutcast streaming to reduce streaming startup time. You can remove this cache file at any time, it will be recreated if needed. 

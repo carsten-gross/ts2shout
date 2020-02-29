@@ -35,8 +35,9 @@ DVB-C and Astra 19.2E DVB-S satellite reception.
 German and Swiss radio on DVB-S (and also DVB-C) supports RDS within 
 the MPEG transport stream. The RDS data (Radio Data System, that 
 thing from the Analog Radio on FM) is just inserted inside the 
-padding bytes of the MPEG stream. Currently I'm working on an implementation 
-the supports this to get title and artist information in the shoutcast stream. 
+padding bytes of the MPEG stream. If you suppy the environment variable RDS 
+or the command line parameter rds it is preferred over MPEG EIT/EPG data. This
+is useful to get title and artist information in the shoutcast stream. 
 
 Just compile the application with make on your linux box and install it
 manually e.g. to /usr/local/bin/ts2shout . It does not need any libraries for
@@ -73,6 +74,8 @@ the Icy-MetaData header given in the http request.
 		&lt;If "%{HTTP:Icy-MetaData} in {'1'}"&gt;
 				SetEnv "MetaData" "1"
 		&lt;/If&gt;
+		# If you prefer RDS data
+		SetEnv RDS 1 
 		SetEnv TVHEADEND "http://localhost:9981/stream/channelname"
 		# The radio stations are called e.g. 
 		# /radio/SWR1%20BW 

@@ -18,10 +18,10 @@
  *  License as published by the Free Software Foundation; either
  *  version 2 of the License, or (at your option) any later version.
  *
- *  This library is distributed in the hope that it will be useful,
+ *  This software is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- *  Lesser General Public License for more details.
+ *  General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public
  *  License along with this library; if not, write to the Free Software
@@ -33,12 +33,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include "ts2shout.h"
 
-#undef RDS_DEBUG   /* Currently RDS is not activated, because implementation is not finished */
-
 extern programm_info_t *global_state;
+
+static struct {
+	uint8_t rt[255];
+	uint8_t ps[255];
+	bool rt_changed;
+} rds_info; 
 
 /* This is just a debug function, not needed for normal operation */
 void DumpHex(const void* data, size_t size) {
@@ -70,11 +75,102 @@ void DumpHex(const void* data, size_t size) {
 	}
 }
 
-// Handle a RDS data chunk. Fill the data right into 
-// correct fields 
 
-void handle_rds_data(ts2shout_channel_t *chan) {
+/* Convert EBU table 1 to latin 1
+ * Taken out of http://www.interactive-radio-system.com/docs/EN50067_RDS_Standard.pdf 
+ * only german at the moment, therefore no table */
 
+uint8_t ebu2latin1(uint8_t character) {
+
+	switch (character) {
+		case 0x91: /* ä "ae" */
+			return 0xe4; 
+		case 0x97: /* ö "oe" */
+			return 0xf6;
+		case 0x99: /* ü "ue" */
+			return 0xfc;
+		case 0x8d: /* ß "ss" */
+			return 0xdf;
+		case 0xd1: /* Ä "AE" */
+			return 0xc4;
+		case 0xd7: /* Ö "OE" */
+			return 0xd6;
+		case 0xd9: /* Ü "UE" */
+			return 0xdc;
+	}
+	if (character < 0x20 || character > 0x7f) {
+		return '.';
+	}
+	return character; 
+}
+
+bool check_message(uint8_t* rds_message, uint8_t size) {
+	/* implement crc check */
+	return true;
+}
+
+void handle_rt(uint8_t* rds_message, uint8_t size) {
+	uint8_t msg_len = rds_message[7]; 
+	uint8_t index   = rds_message[8]; 
+	if (index > 1) index = 1; 
+	uint8_t i; 
+	for (i = 9; i < 8 + msg_len; i++) {
+		/* is some character different? */
+		if (rds_info.rt[i - 9 + index * 0x40] != ebu2latin1(rds_message[i])) {
+			rds_info.rt_changed = true; 
+		}
+		rds_info.rt[i - 9 + index * 0x40] = ebu2latin1(rds_message[i]); 
+	}
+	return; 
+}
+	
+// Handle a RDS data chunk. 
+void handle_message(uint8_t* rds_message, uint8_t size) {
+	// fprintf(stderr, "  **** FULL RDS-Message (%d) ****\n", size); 
+	// DumpHex(rds_message, size); 
+	
+	// There is a CRC 16 at the end of each message, but I don't know 
+	// now to check it at the moment
+	uint8_t type = rds_message[4];
+	if (! check_message(rds_message, size))  
+		return;
+	switch (type) {
+		case 0x0a: // RT (Radiotexta)
+			handle_rt(rds_message, size); 
+			break;
+		case 0x01: // PI Code
+			//handle_pi(rds_message, size); 
+			break;
+		case 0x02:
+			//handle_ps(rds_message, size); 
+			break;
+	}
+	if (rds_info.rt_changed == true) {
+		unsigned char utf8_rt[STR_BUF_SIZE];
+		unsigned char short_rt[STR_BUF_SIZE]; 
+		uint8_t i = 0; 
+		uint8_t j = 0;
+		bool space = false;
+		for (i = 0; i < strlen((char*)rds_info.rt); i++) {
+			if (rds_info.rt[i] == 0x20 && space == false) {
+				space = true; 
+				short_rt[j] = 0x20; 
+				j++;
+				continue;
+			} else if ( rds_info.rt[i] != 0x20 ) {
+				space = false; 
+				short_rt[j] = rds_info.rt[i]; 
+				j++;
+			}
+		}
+		short_rt[j] = 0;	
+		/* copy RDS to stream_title */
+		strcpy(global_state->stream_title, (char*)short_rt);
+        utf8((unsigned char*)short_rt, utf8_rt);
+		output_logmessage("RDS: %s\n", utf8_rt);
+		// fprintf(stderr, "NEW RT(%s)\n", rds_info.rt);
+		rds_info.rt_changed = false;
+	}
 	return;
 }
 
@@ -83,6 +179,9 @@ void handle_rds_data(ts2shout_channel_t *chan) {
 // buffer is the buffer of the mpeg-frame and offset is the current read offset
 // it points to the "0xff" of the mpeg frame start!
 char * rds_decode_oneframe(uint8_t* buffer, int offset, char *text) {
+	static uint8_t current_pos = 0;
+	static uint8_t rds_message[255]; 
+
 	int j = 0;
 	int k = 0; 
 	uint8_t rds_data_size = buffer[offset - 2];
@@ -91,6 +190,20 @@ char * rds_decode_oneframe(uint8_t* buffer, int offset, char *text) {
 	}
 	for (j = 3; j < ( rds_data_size + 3); j++) {
 		uint8_t mychar = buffer[offset - j]; 
+		if (mychar == 0xfe) {
+			current_pos = 0; 
+		} else if (mychar == 0xff) {
+			handle_message(rds_message, current_pos); 
+			current_pos = 0; 
+		} else if (mychar == 0xfd) {
+			// special marker: 0xfd 0x01 means 0xfe, 0xfd 0x02 means 0xff 
+			j++; 
+			rds_message[current_pos] = mychar + buffer[offset - j]; 
+			current_pos ++; 
+		} else {
+			rds_message[current_pos] = mychar; 
+			current_pos ++; 
+		}
 		text[k] = mychar; 
 		k ++; 
 	}
@@ -133,10 +246,11 @@ char * rds_decode_oneframe(uint8_t* buffer, int offset, char *text) {
   (Not implemented yet)
 */
 
-#undef RDS_DEBUG
 void rds_data_scan(ts2shout_channel_t *chan) {
 
-#ifdef RDS_DEBUG
+	/* RDS globally enabled? */
+	if (! global_state->prefer_rds) 
+		return;
 	static uint8_t oldbuffer[60];
 
 	int i = 0;  // Loop variables
@@ -153,55 +267,50 @@ void rds_data_scan(ts2shout_channel_t *chan) {
 			// Found mpeg frame start. The RDS data is RIGHT IN FRONT OF IT
 			if (i == 0) {
 				// The frame start is too early, cannot fetch anything before
-				fprintf(stderr, "Frame start to early (%d) [0x%x 0x%x 0x%x]\n", i, oldbuffer[57 - i], oldbuffer[58 -i], oldbuffer[59 - i]);
+				// fprintf(stderr, "Frame start to early (%d) [0x%x 0x%x 0x%x]\n", i, oldbuffer[57 - i], oldbuffer[58 -i], oldbuffer[59 - i]);
 				if (oldbuffer[59 - i] == 0xfd) {	
 					char text[255];
 					uint8_t rds_data_size = oldbuffer[58 - i]; 
 					rds_decode_oneframe(oldbuffer, 60 - i, (char *) &text);	
 					if ( rds_data_size > 0) {
-						fprintf(stderr, "RDS-Frame in oldbuf (%d)\n", rds_data_size);
-						DumpHex(text, rds_data_size);
+						// fprintf(stderr, "RDS-Frame in oldbuf (%d)\n", rds_data_size);
+						// DumpHex(text, rds_data_size);
 					}
 				}
 			} else { // if ( (i - offset) > chan->mpah.framesize - 30 
 				if ( buffer[i-1] == 0xfd ) {	
-					// yes: RDS data	
+					// yes: RDS data
+					if (global_state->found_rds == false) {
+						global_state->found_rds = true;
+						output_logmessage("RDS: RDS data found, using RDS instead of EIT.\n");
+					}
 					uint8_t rds_data_size = buffer[i-2]; 
 					if (rds_data_size > 0) {
 						char text[255];
 						rds_decode_oneframe(buffer, i, (char *) &text); 
 						if ( rds_data_size > 0 ) {
-							fprintf(stderr, "RDS-Frame (0x%x, %d)\n", i, rds_data_size);
-							DumpHex(text, rds_data_size); 
+							// fprintf(stderr, "RDS-Frame (0x%x, %d)\n", i, rds_data_size);
+							// DumpHex(text, rds_data_size); 
 						} 
 					} else {
 						// fprintf(stderr, "No RDS Data (0x%x)\n", i); 
 					}
 				} else {
-					fprintf(stderr, "No 0xfd? Data (0x%x)\n", i); 
+					// fprintf(stderr, "No 0xfd? Data (0x%x)\n", i); 
 				}
 			}
 			// offset = i;			// current offset 
 			// matchcount += 1;    // current match
 		}
 	}
-	// check wether there is something at the end
-	/* 
-	if (buffer[size-1] == 0xfd && buffer[size] == 0xff) {
-		char text[255];
-		rds_decode_oneframe(buffer, i, (char *) &text);
-		if ( buffer[size -2] > 0 && text[0] > 0 ) {	
-			// fprintf(stderr, "%s", text);
-			fprintf(stderr, "RDS Frame (0x%x, %d)\n", i, buffer[size -2]);
-			DumpHex(text, buffer[size -2]);
-		}
-	}
-	*/
 	/* Store last 60 bytes from the end of the frame into "oldbuffer" 
 	 * to have it at hand if next frame starts with MPEG header */
 	memcpy(oldbuffer, buffer + size - 60, 60); 
 	// fprintf(stderr, "Offset %d, matchcount %d\n", offset, matchcount); 
-#endif
 	return;  
 }
 
+void init_rds() {
+	memset(rds_info.rt, 0x20, 0x7f); 
+	return; 
+}
