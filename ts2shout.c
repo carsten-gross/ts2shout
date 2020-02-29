@@ -38,6 +38,7 @@
 #include <curl/curl.h>
 
 #include "ts2shout.h"
+#include "rds.h"
 
 int Interrupted=0;        /* Playing interrupted by signal? */
 int channel_count=0;      /* Current listen channel count */
@@ -603,13 +604,11 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 		}
 		// If stream is synced then put data info buffer
 		if (chan->synced && global_state->output_payload) {
-		
 			// Check that there is space
 			if (chan->buf_used + es_len > chan->buf_size) {
 				output_logmessage("Error: MPEG Audio buffer overflow\n" );
 				exit(-1);
 			}
-		
 			// Copy data into the buffer
 			memcpy( chan->buf_ptr + chan->buf_used, es_ptr, es_len);
 			chan->buf_used += es_len;
@@ -626,7 +625,10 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 		add_cache(global_state); 
 		global_state->cache_written = 1; 
 	}
-
+	// every time the buffer is full scan for RDS data. Hopefully we get the RDS data
+	if (chan->buf_used > chan->payload_size && global_state->output_payload) {
+		rds_data_scan(chan);
+	}
 	// Got enough to send packet and we are allowed to output data
 	if (chan->buf_used > chan->payload_size && global_state->output_payload ) {
 		#ifndef DEBUG 

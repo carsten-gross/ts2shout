@@ -128,7 +128,7 @@ void add_cache(programm_info_t *global_state) {
 	int linesize = 0; 
 
 	/* Generate temporary file */
-	tempname = alloca(sizeof(CACHE_FILENAME) + 7);
+	tempname = alloca(sizeof(CACHE_FILENAME) + 8); /* Trailing \0 character */
 	strcpy(tempname, CACHE_FILENAME ".XXXXXX"); 
 	tempfd = mkstemp(tempname);
 	if (tempfd <= 0) {

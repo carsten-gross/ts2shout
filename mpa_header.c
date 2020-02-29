@@ -31,8 +31,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "mpa_header.h"
 #include "ts2shout.h"
+#include "mpa_header.h"
 
 extern programm_info_t *global_state;
 

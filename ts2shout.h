@@ -251,6 +251,18 @@ typedef struct section_aggregate_s {
 	uint8_t buffer[EIT_BUF_SIZE];
 } section_aggregate_t; 
 
+/* This is totally out of control - RDS - radio data system 
+ * We are back at it, after > 25 years 
+ * Please see http://www.siski.de/~carsten/rds-dekoder.html */
+typedef struct rds_data_s {
+	char ps[9];						/* Station */
+	char radiotext1[161];			/* As it was in former time, 160 Byte Radiotext */
+	char radiotext2[161];			/* As it was in former time, 160 Byte Radiotext */
+	char interpret[161];			/* There is a special mode in "radiotext+" to submit artist */
+	char titel[161];				/* And also a special mode for music titles */
+	/* To be extended */
+} rds_data_t; 
+
 /* crc32.c */
 uint32_t crc32 (unsigned char *data, int len); 
 

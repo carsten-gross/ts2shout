@@ -7,8 +7,8 @@ LDFLAGS=
 # DEBUG=-DDEBUG -g
 PREFIX=/usr/local
 
-ts2shout: ts2shout.o mpa_header.o util.o pes.o crc32.o 
-	${CC} ${DEBUG} ${LDFLAGS} -o ts2shout ts2shout.o mpa_header.o util.o pes.o crc32.o -lcurl
+ts2shout: ts2shout.o mpa_header.o util.o pes.o crc32.o rds.o
+	${CC} ${DEBUG} ${LDFLAGS} -o ts2shout ts2shout.o rds.o mpa_header.o util.o pes.o crc32.o -lcurl
 ts2shout.o: ts2shout.c ts2shout.h
 	${CC} ${DEBUG} ${CFLAGS} -c ts2shout.c
 mpa_header.o: mpa_header.c mpa_header.h
@@ -19,6 +19,8 @@ util.o: util.c
 	${CC} ${DEBUG} ${CFLAGS} -c util.c
 crc32.o: crc32.c
 	${CC} ${DEBUG} ${CFLAGS} -c crc32.c
+rds.o: rds.c
+	${CC} ${DEBUG} ${CFLAGS} -c rds.c
 
 clean:
 	rm -f *.o ts2shout
