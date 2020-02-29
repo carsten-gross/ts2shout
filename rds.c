@@ -117,6 +117,11 @@ void handle_rt(uint8_t* rds_message, uint8_t size) {
 	if (msg_len > 0x41) {
 		msg_len = 0x41;
 	}
+	if (msg_len > 0) {
+		for (i = msg_len - 1; i < 0x40; i++) {
+			rds_info.rt[i + index * 0x40] = ' ';
+		}
+	}
 	for (i = 9; i < 8 + msg_len; i++) {
 		/* is some character different? */
 		if (rds_info.rt[i - 9 + index * 0x40] != ebu2latin1(rds_message[i])) {
