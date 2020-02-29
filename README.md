@@ -32,6 +32,12 @@ http://www.smackfu.com/stuff/programming/shoutcast.html. ts2shout should work
 with most DVB-C/DVB-S radio stations and was tested by myself with Unitymedia
 DVB-C and Astra 19.2E DVB-S satellite reception.
 
+German and Swiss radio on DVB-S (and also DVB-C) supports RDS within 
+the MPEG transport stream. The RDS data (Radio Data System, that 
+thing from the Analog Radio on FM) is just inserted inside the 
+padding bytes of the MPEG stream. Currently I'm working on an implementation 
+the supports this to get title and artist information in the shoutcast stream. 
+
 Just compile the application with make on your linux box and install it
 manually e.g. to /usr/local/bin/ts2shout . It does not need any libraries for
 shoutcast or mpeg as it just parses and uses a sub-extreme-minimum set of mpeg
