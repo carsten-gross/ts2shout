@@ -229,49 +229,56 @@ char * rds_decode_oneframe(uint8_t* buffer, int offset, char *text) {
 
 
 
-/* RDS scan 
-   scan a whole buffer for "0xff 0xfx" - this is the beginning of an MPEG frame. 
+/* RDS scan
+   scan a whole buffer for "0xff 0xfx" - this is the beginning of an MPEG frame.
    The RDS data is right before it
    See https://www.etsi.org/deliver/etsi_ts/101100_101199/101154/02.01.01_60/ts_101154v020101p.pdf
    for a spec on how the data is aligned
  
-   MPEG stream laylout looks like this 
-   
-   No RDS data (but supported): 
+   MPEG stream laylout looks like this (@ frame start)
 
-	[...] aa aa aa 00 fd ff fx
+   Without RDS support 
+
+   [...] aa aa aa aa aa ff fx 
+              ^^^^^^^^^ ^^^^
+                  |     MPEG frame start (x is "don't care")
+                  +---- padding bytes (from last frame) 
+ 
+   No RDS data (but supported):
+
+    [...] aa aa aa 00 fd ff fx
                    ^  ^  ^
                    |  |  +-- MPEG frame start (x is "don't care")
-                   |  + RDS Marker 
+                   |  + RDS Marker
                    + length marker (here: 0 no data)
 
-    RDS data available: 
+    RDS data available:
 
-	[...] ff 65 2f 20 57 42 31 52 57 53 0a fd ff fx
+    [...] ff 65 2f 20 57 42 31 52 57 53 0a fd ff fx
                                      ^  ^  ^  ^
-                                     |  |  |  +-- MPEG frame start 
-                                     |  |  + RDS Marker 
+                                     |  |  |  +-- MPEG frame start
+                                     |  |  + RDS Marker
                                      |  + length marker (here: 0x0a 10 Bytes of data)
-                                     + Data in *reverse* order 
-    The data of the above block in correct order: 
-    53 57 52 31 42 57 20 2f 65 ff  |  SWR1BW /e. 
+                                     + Data in *reverse* order
+    The data of the above block in correct order:
+    53 57 52 31 42 57 20 2f 65 ff  |  SWR1BW /e.
 
-  The sequence of the individual bytes is to be reversed. The data must be extracted from the individual 
-  MPEG frames and then appended to each other. The start marker is "0xfe" and the end marker is "0xff". 
+  The sequence of the individual bytes is to be reversed. The data must be extracted from the individual
+  MPEG frames and then appended to each other. The start marker is "0xfe" and the end marker is "0xff".
   The bytes inbetween 0xfe und 0xff have to be collected and stored into a buffer and handled as RDS message.
 */
 
 void rds_data_scan(ts2shout_channel_t *chan) {
 
-	/* RDS globally enabled? */
+	/* RDS globally enabled? Command line option or
+	 * environment variable */
 	if (! global_state->prefer_rds) 
 		return;
 	static uint8_t oldbuffer[60];
 
-	int i = 0;  // Loop variables
-	// int matchcount = 0;
+	int i = 0;
 
-	// Easier handling
+	// Easier handling 
 	uint8_t * buffer = chan->buf; 
 	int size = chan->payload_size; 
 	if (size < 2)
