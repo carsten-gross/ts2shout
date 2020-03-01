@@ -171,7 +171,13 @@ void handle_message(uint8_t* rds_message, uint8_t size) {
 				j++;
 			}
 		}
-		short_rt[j] = 0;	
+		short_rt[j] = 0;
+		/* The first radiotext message disables EIT scan and 
+		 * enables RDS text (if prefer_rds is enabled) */
+		if (global_state->found_rds == false) {
+			global_state->found_rds = true;
+			output_logmessage("RDS: RDS data found, using RDS instead of EIT.\n");
+		}
 		/* copy RDS to stream_title */
 		strcpy(global_state->stream_title, (char*)short_rt);
         utf8((unsigned char*)short_rt, utf8_rt);
@@ -196,6 +202,8 @@ char * rds_decode_oneframe(uint8_t* buffer, int offset, char *text) {
 	if (rds_data_size == 0) {
 		return NULL;
 	}
+	/* 0xfd, 0xfe (start marker) and 0xff (end marker) have special meanings */
+	/* 0xfd is a special marker to make 0xfe and 0xff possible as data bytes */
 	for (j = 3; j < ( rds_data_size + 3); j++) {
 		uint8_t mychar = buffer[offset - j]; 
 		if (mychar == 0xfe) {
@@ -235,7 +243,7 @@ char * rds_decode_oneframe(uint8_t* buffer, int offset, char *text) {
                    ^  ^  ^
                    |  |  +-- MPEG frame start (x is "don't care")
                    |  + RDS Marker 
-                   + lenght marker (here: 0 no data)
+                   + length marker (here: 0 no data)
 
     RDS data available: 
 
@@ -243,7 +251,7 @@ char * rds_decode_oneframe(uint8_t* buffer, int offset, char *text) {
                                      ^  ^  ^  ^
                                      |  |  |  +-- MPEG frame start 
                                      |  |  + RDS Marker 
-                                     |  + lenght marker (here: 0 no data)
+                                     |  + length marker (here: 0x0a 10 Bytes of data)
                                      + Data in *reverse* order 
     The data of the above block in correct order: 
     53 57 52 31 42 57 20 2f 65 ff  |  SWR1BW /e. 
@@ -251,7 +259,6 @@ char * rds_decode_oneframe(uint8_t* buffer, int offset, char *text) {
   The sequence of the individual bytes is to be reversed. The data must be extracted from the individual 
   MPEG frames and then appended to each other. The start marker is "0xfe" and the end marker is "0xff". 
   The bytes inbetween 0xfe und 0xff have to be collected and stored into a buffer and handled as RDS message.
-  (Not implemented yet)
 */
 
 void rds_data_scan(ts2shout_channel_t *chan) {
@@ -288,10 +295,6 @@ void rds_data_scan(ts2shout_channel_t *chan) {
 			} else { // if ( (i - offset) > chan->mpah.framesize - 30 
 				if ( buffer[i-1] == 0xfd ) {	
 					// yes: RDS data
-					if (global_state->found_rds == false) {
-						global_state->found_rds = true;
-						output_logmessage("RDS: RDS data found, using RDS instead of EIT.\n");
-					}
 					uint8_t rds_data_size = buffer[i-2]; 
 					if (rds_data_size > 0) {
 						char text[255];

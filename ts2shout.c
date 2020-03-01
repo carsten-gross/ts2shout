@@ -1129,8 +1129,8 @@ int main(int argc, char **argv)
 	} 
 	init_structures();
 	init_rds(); 
-	output_logmessage("Streaming %s in %s mode.\n", (shoutcast?"with shoutcast StreamTitles":"without shoutcast support, audio only"), 
-		(cgi_mode?"CGI":"FILTER"));
+	output_logmessage("%s %s in %s mode with%s RDS support.\n",(global_state->want_ac3?"AC-3 streaming":"MPEG streaming"), (shoutcast?"with shoutcast StreamTitles":"without shoutcast support, audio only"), 
+		(cgi_mode?"CGI":"FILTER"), (global_state->prefer_rds?"":"out") );
 	// Setup signal handlers
 	if (signal(SIGHUP, signal_handler) == SIG_IGN) signal(SIGHUP, SIG_IGN);
 	if (signal(SIGINT, signal_handler) == SIG_IGN) signal(SIGINT, SIG_IGN);
