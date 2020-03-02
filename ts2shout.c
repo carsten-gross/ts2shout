@@ -40,6 +40,9 @@
 #include "ts2shout.h"
 #include "rds.h"
 
+#define XSTR(s) STR(s)
+#define STR(s) #s
+
 int Interrupted=0;        /* Playing interrupted by signal? */
 int channel_count=0;      /* Current listen channel count */
 
@@ -142,10 +145,10 @@ static void extract_pat_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	unsigned char* start = NULL;
 	start = pes_ptr + start_of_pes; 
 #ifdef DEBUG
-    fprintf (stderr, "PAT: Found data, table 0x%2.2d (Section length %d), transport_stream_id %d, section %d, last section %d\n",
+    fprintf (stderr, "PAT: Found data, table 0x%2.2d (Section length %d), service_id %d, section %d, last section %d\n",
 		PAT_TABLE_ID(start),
 		PAT_SECTION_LENGTH(start),
-		PAT_TRANSPORT_STREAM_ID(start),	
+		PAT_SERVICE_ID(start),	
 		PAT_SECTION_NUMBER(start),
 		PAT_LAST_SECTION_NUMBER(start));
 #endif 
@@ -156,7 +159,7 @@ static void extract_pat_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 			global_state->transport_stream_id = PAT_TRANSPORT_STREAM_ID(start);
 			output_logmessage("extract_pat_payload(): programme has transport_stream_id: %d\n", global_state->transport_stream_id ); 
 			add_channel(CHANNEL_TYPE_PMT, PAT_PROGRAMME_PMT(programmes));
-			global_state->programm_id = PAT_TRANSPORT_STREAM_ID(start);
+			// global_state->programm_id;  PAT_TRANSPORT_STREAM_ID(start);
 		} else {
 			// fprintf (stderr, "PAT: crc32 does not match: calculated %d, expected 0\n", crc32(start, PAT_SECTION_LENGTH(start) + 3)); 
 		}
@@ -176,7 +179,10 @@ static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned
 			|| PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x04 /* MPEG 2 audio */
 			|| PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x0f /* MPEG 2 audio */) {
 			/* We found a mp1/mp2 media stream */
-			output_logmessage("add_payload_from_pmt(): Found mp1/mp2 audio stream in PID %d\n", PMT_PID(pmt_stream_info_offset)); 
+			global_state->service_id = PMT_PROGRAM_NUMBER(start);
+			output_logmessage("add_payload_from_pmt(): Found mp1/mp2 audio stream in PID %d (service_id %d)\n", 
+				PMT_PID(pmt_stream_info_offset), 
+				global_state->service_id ); 
 			add_channel(CHANNEL_TYPE_PAYLOAD, PMT_PID(pmt_stream_info_offset));
 			global_state->payload_added = 1; 
 		}
@@ -244,14 +250,17 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 			/* Search for stream description */
 			while ((pmt_stream_info_offset != NULL) && found_streams_counter < 3) {
 				if (! channel_map[PMT_PID(pmt_stream_info_offset)]) {
+		            /* right transport_id? */
 					add_payload_from_pmt(pmt_stream_info_offset, start);
 					found_streams_counter += 1;
 					if (global_state->payload_added > 0) {
 						pmt_stream_info_offset = NULL;
+						global_state->service_id = PMT_PROGRAM_NUMBER(start); 
+						pmt_stream_info_offset = NULL;
 					} else {
 						pmt_stream_info_offset = PMT_FIRST_STREAM_DESCRIPTORP(pmt_stream_info_offset) + PMT_INFO_LENGTH(pmt_stream_info_offset);
 #ifdef DEBUG
-	fprintf(stderr, "PMT: Found other stream with PID %d, stream type %d\n", PMT_PID(pmt_stream_info_offset), PMT_STREAM_TYPE(pmt_stream_info_offset)); 
+						fprintf(stderr, "PMT: Found other stream with PID %d, stream type %d\n", PMT_PID(pmt_stream_info_offset), PMT_STREAM_TYPE(pmt_stream_info_offset)); 
 #endif
 					}
 				} else {
@@ -262,7 +271,7 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 #endif 
 					found_streams_counter += 1; 
 				}
-			}
+			}	
 		}
 	}
 }
@@ -379,50 +388,61 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 		} else {
 			if ( PMT_TABLE_ID(start) == 0x42 ) {
 				/* Table 0x42 contains information about current stream, we only want programm "running" (see mpeg standard for this hardcoded stuff) */
-				if (SDT_DESCRIPTOR_RUNNING(description_offset) == 0x4) {
-					unsigned char* description_content = SDT_DESCRIPTOR_CONTENT(description_offset);
-					char provider_name[STR_BUF_SIZE]; 
-					char service_name[STR_BUF_SIZE];
-					uint8_t service_name_length = description_content[SDT_DC_PROVIDER_NAME_LENGTH(description_content) + 4]; 
-					unsigned char * tmp = description_content + SDT_DC_PROVIDER_NAME_LENGTH(description_content) + 5; 
-					/* Service 0x02, 0x0A, 0x07: (Digital) Radio */
-					if (SDT_DC_SERVICE_TYPE(description_content) == 0x2
-						|| SDT_DC_SERVICE_TYPE(description_content) == 0x0a 
-						|| SDT_DC_SERVICE_TYPE(description_content) == 0x07 ) {
-						if (SDT_DC_PROVIDER_NAME_LENGTH(description_content) < STR_BUF_SIZE) {
-							if (SDT_DC_PROVIDER_NAME(description_content)[0] < 0x20) {
-								/* MPEG Standard has very sophisticated charset encoding, therefore a simple Hack for my setup */
-								snprintf(provider_name, SDT_DC_PROVIDER_NAME_LENGTH(description_content), "%s", SDT_DC_PROVIDER_NAME(description_content + 1) ); 
+				while (description_offset < (SDT_FIRST_DESCRIPTOR(start) +  PMT_SECTION_LENGTH(start))) {
+					if(SDT_DESCRIPTOR_SERVICE_ID(description_offset) != global_state->service_id) {
+#ifdef DEBUG
+						fprintf(stderr, "SDT: SDT service %d doesn't match global service id (%d)\n", SDT_DESCRIPTOR_SERVICE_ID(description_offset), global_state->service_id); 
+						DumpHex(description_offset, 188);
+						fprintf(stderr, "----------------\n");
+#endif
+					} else {
+						if (SDT_DESCRIPTOR_RUNNING(description_offset) == 0x4) {
+							unsigned char* description_content = SDT_DESCRIPTOR_CONTENT(description_offset);
+							char provider_name[STR_BUF_SIZE]; 
+							char service_name[STR_BUF_SIZE];
+							uint8_t service_name_length = description_content[SDT_DC_PROVIDER_NAME_LENGTH(description_content) + 4]; 
+							unsigned char * tmp = description_content + SDT_DC_PROVIDER_NAME_LENGTH(description_content) + 5; 
+							/* Service 0x02, 0x0A, 0x07: (Digital) Radio */
+							if (SDT_DC_SERVICE_TYPE(description_content) == 0x2
+								|| SDT_DC_SERVICE_TYPE(description_content) == 0x0a 
+								|| SDT_DC_SERVICE_TYPE(description_content) == 0x07 ) {
+								if (SDT_DC_PROVIDER_NAME_LENGTH(description_content) < STR_BUF_SIZE) {
+									if (SDT_DC_PROVIDER_NAME(description_content)[0] < 0x20) {
+										/* MPEG Standard has very sophisticated charset encoding, therefore a simple Hack for my setup */
+										snprintf(provider_name, SDT_DC_PROVIDER_NAME_LENGTH(description_content), "%s", SDT_DC_PROVIDER_NAME(description_content + 1) ); 
+									} else {
+										snprintf(provider_name, SDT_DC_PROVIDER_NAME_LENGTH(description_content) + 1, "%s", SDT_DC_PROVIDER_NAME(description_content));
+									}
+								}
+								/* like above, but written compacted, if first character is smaller 0x20 it's the charset encoding */
+								snprintf(service_name, service_name_length + (tmp[0]< 0x20?0:1), "%s", tmp + (tmp[0]< 0x20?1:0));
+								/* Sometime we get garbage only store if we have a service_name with length > 0 */
+								if (strlen(service_name) > 0) {
+									/* service name is latin1 in most cases */
+									unsigned char utf8_service_name[STR_BUF_SIZE];
+									utf8((unsigned char*)service_name, utf8_service_name);
+									/* Yes, we want to get information about the programme */
+									output_logmessage("SDT: Stream is station %s from network %s.\n", utf8_service_name, provider_name);
+									strncpy(global_state->station_name, service_name, STR_BUF_SIZE);
+									global_state->sdt_fromstream = 1;
+									break; /* leave while loop */
+								}
 							} else {
-								snprintf(provider_name, SDT_DC_PROVIDER_NAME_LENGTH(description_content) + 1, "%s", SDT_DC_PROVIDER_NAME(description_content));
+								/* If service type is 0xff it's very likely just a stuffing frame without any content */
+								if (SDT_DC_SERVICE_TYPE(description_content) != 0xff) {
+									output_logmessage("SDT: Warning: Stream (also) contains unkown service with id 0x%2x\n", SDT_DC_SERVICE_TYPE(description_content)); 
+								}
 							}
 						}
-						/* like above, but written compacted, if first character is smaller 0x20 it's the charset encoding */
-						snprintf(service_name, service_name_length + (tmp[0]< 0x20?0:1), "%s", tmp + (tmp[0]< 0x20?1:0));
-						/* Sometime we get garbage only store if we have a service_name with length > 0 */
-						if (strlen(service_name) > 0) {
-							/* service name is latin1 in most cases */
-							unsigned char utf8_service_name[STR_BUF_SIZE];
-							utf8((unsigned char*)service_name, utf8_service_name);
-							/* Yes, we want to get information about the programme */
-							output_logmessage("SDT: Stream is station %s from network %s.\n", utf8_service_name, provider_name);
-							strncpy(global_state->station_name, service_name, STR_BUF_SIZE);
-							global_state->sdt_fromstream = 1;
-						}
-					} else {
-						/* If service type is 0xff it's very likely just a stuffing frame without any content */
-						if (SDT_DC_SERVICE_TYPE(description_content) != 0xff) {
-							output_logmessage("SDT: Warning: Stream (also) contains unkown service with id 0x%2x\n", SDT_DC_SERVICE_TYPE(description_content)); 
-						}
 					}
-				}
+					description_offset = description_offset + SDT_DESCRIPTOR_LOOP_LENGTH(description_offset) + 5;
+				} /* end while */
 			}
 		}
 	}
 	sdt_table->buffer_valid = 0; 
 	return;
 }
-
 
 
 static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes, unsigned char* ts_full_frame )
@@ -460,6 +480,14 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 		/* Current programme found */
 		unsigned char* event_start = EIT_PACKET_EVENTSP(start);
 		unsigned char* description_start = EIT_EVENT_DESCRIPTORP(event_start);
+		unsigned int service_id = EIT_SERVICE_ID(start); 
+		if ( service_id != global_state->service_id && global_state->service_id > 0 ) {
+#ifdef DEBUG
+			fprintf(stderr, "EIT: service_id %d is wrong (%d)\n", service_id, global_state->service_id); 
+#endif
+			eit_table->buffer_valid = 0;
+			return;
+		}
 #ifdef DEBUG
 		unsigned char* first_description_start = EIT_EVENT_DESCRIPTORP(event_start);
 		fprintf(stderr, "EIT: Found event with id %d, currently in status %d, starttime %6.6x, duration %6.6x, Section: %d (V:%d) from %d (Length: %d).\n",
@@ -581,14 +609,14 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 			if (chan->pes_stream_id >= 0xc0) {
 				if (mpa_header_parse(es_ptr, &chan->mpah)) {
 					// Now we know bitrate etc, set things up
-					output_logmessage("Synced to MP1/MP2 audio in PID %d stream: 0x%x\n", chan->pid, chan->pes_stream_id );
+					// output_logmessage("Synced to MP1/MP2 audio in PID %d stream: 0x%x\n", chan->pid, chan->pes_stream_id );
 					mpa_header_print( &chan->mpah );
 					chan->synced = 1;
 					chan->payload_size = 2048; 
 				}
 			} else {
 				if (ac3_header_parse(es_ptr, &chan->mpah)) {
-					output_logmessage("Synced to AC-3 audio in PID %d stream: 0x%x\n", chan->pid, chan->pes_stream_id );
+					// output_logmessage("Synced to AC-3 audio in PID %d stream: 0x%x\n", chan->pid, chan->pes_stream_id );
 					ac3_header_print( &chan->mpah );
 					chan->synced = 1;
 					chan->payload_size = 2048;
@@ -1128,8 +1156,11 @@ int main(int argc, char **argv)
 		parse_args( argc, argv );
 	} 
 	init_structures();
-	init_rds(); 
-	output_logmessage("%s %s in %s mode with%s RDS support.\n",(global_state->want_ac3?"AC-3 streaming":"MPEG streaming"), (shoutcast?"with shoutcast StreamTitles":"without shoutcast support, audio only"), 
+	init_rds();
+	output_logmessage("ts2shout version " XSTR(CURRENT_VERSION) " started\n");
+	output_logmessage("%s %s in %s mode with%s RDS support.\n",
+		(global_state->want_ac3?"AC-3 streaming":"MPEG streaming"),
+		(shoutcast?"with shoutcast StreamTitles":"without shoutcast support, audio only"),
 		(cgi_mode?"CGI":"FILTER"), (global_state->prefer_rds?"":"out") );
 	// Setup signal handlers
 	if (signal(SIGHUP, signal_handler) == SIG_IGN) signal(SIGHUP, SIG_IGN);
