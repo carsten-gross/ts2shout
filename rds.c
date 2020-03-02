@@ -192,7 +192,7 @@ void handle_message(uint8_t* rds_message, uint8_t size) {
 // char * text points to 255 byte of char 
 // buffer is the buffer of the mpeg-frame and offset is the current read offset
 // it points to the "0xff" of the mpeg frame start!
-char * rds_decode_oneframe(uint8_t* buffer, int offset, char *text) {
+void rds_decode_oneframe(uint8_t* buffer, int offset) {
 	static uint8_t current_pos = 0;
 	static uint8_t rds_message[255]; 
 
@@ -200,7 +200,7 @@ char * rds_decode_oneframe(uint8_t* buffer, int offset, char *text) {
 	int k = 0; 
 	uint8_t rds_data_size = buffer[offset - 2];
 	if (rds_data_size == 0) {
-		return NULL;
+		return;
 	}
 	/* 0xfd, 0xfe (start marker) and 0xff (end marker) have special meanings */
 	/* 0xfd is a special marker to make 0xfe and 0xff possible as data bytes */
@@ -220,11 +220,9 @@ char * rds_decode_oneframe(uint8_t* buffer, int offset, char *text) {
 			rds_message[current_pos] = mychar; 
 			current_pos ++; 
 		}
-		text[k] = mychar; 
 		k ++; 
 	}
-	text[k] = 0; 
-	return text; 
+	return;
 }
 
 
@@ -281,22 +279,31 @@ void rds_data_scan(ts2shout_channel_t *chan) {
 	// Easier handling 
 	uint8_t * buffer = chan->buf; 
 	int size = chan->payload_size; 
-	if (size < 2)
+	if (size < 60) {
 		return;
-	for (i = 0; i < size ; i++) {
-		if( buffer[i] == 0xff 
-			&& (buffer[i+1] & 0xf0) == 0xf0 ) {
+	}
+	for (i = 0; i < size - 1; i++) {
+		if( ( buffer[i] == 0xff ) && ( (buffer[i+1] & 0xf0 ) == 0xf0 ) ) {
 			// Found mpeg frame start. The RDS data is RIGHT IN FRONT OF IT
-			if (i == 0) {
-				// The frame start is too early, cannot fetch anything before
-				// fprintf(stderr, "Frame start to early (%d) [0x%x 0x%x 0x%x]\n", i, oldbuffer[57 - i], oldbuffer[58 -i], oldbuffer[59 - i]);
-				if (oldbuffer[59 - i] == 0xfd) {	
-					char text[255];
-					uint8_t rds_data_size = oldbuffer[58 - i]; 
-					rds_decode_oneframe(oldbuffer, 60 - i, (char *) &text);	
-					if ( rds_data_size > 0) {
-						// fprintf(stderr, "RDS-Frame in oldbuf (%d)\n", rds_data_size);
-						// DumpHex(text, rds_data_size);
+			if ( i < 32 ) {
+				/* If we find the marker at the very beginning of the buffer
+				 * we can expect that the current buffer does not contain all necessary data.
+				 * In this case we also use data from last frame. */
+				uint8_t helper[512];       /* with this size we cannot ever read outside our memory */
+				memset(helper, 0xff, 512); /* write termination character all over the buffer */
+				memcpy(helper + 255 , oldbuffer + i, 60 - i); /* Fill in old buffer contents from last call */
+				memcpy(helper + 255 + 60 - i, buffer, i);     /* and append the new buffer contents */
+				//if ( i > 0) {
+				//	fprintf(stderr, "RDS-Frame with offset! (%d)\n", i);
+				//	DumpHex(buffer, 128);
+				//	fprintf(stderr, "\n");
+				//	DumpHex(helper + 255, 60);
+				//	fprintf(stderr, "Trying to detect: 0x%x, 0x%x, 0x%x\n", helper[255 + 57 - i], helper[255 + 58 -i ], helper[255 + 59 -i ]);
+				//}
+				if (helper[255 + 59 - i] == 0xfd) {
+					uint8_t rds_data_size = helper[255 + 58 -i];
+					if (rds_data_size > 0) {
+						rds_decode_oneframe(helper, 255 + 60 - i);
 					}
 				}
 			} else { // if ( (i - offset) > chan->mpah.framesize - 30 
@@ -304,11 +311,9 @@ void rds_data_scan(ts2shout_channel_t *chan) {
 					// yes: RDS data
 					uint8_t rds_data_size = buffer[i-2]; 
 					if (rds_data_size > 0) {
-						char text[255];
-						rds_decode_oneframe(buffer, i, (char *) &text); 
+						rds_decode_oneframe(buffer, i);
 						if ( rds_data_size > 0 ) {
 							// fprintf(stderr, "RDS-Frame (0x%x, %d)\n", i, rds_data_size);
-							// DumpHex(text, rds_data_size); 
 						} 
 					} else {
 						// fprintf(stderr, "No RDS Data (0x%x)\n", i); 
@@ -321,8 +326,9 @@ void rds_data_scan(ts2shout_channel_t *chan) {
 			// matchcount += 1;    // current match
 		}
 	}
-	/* Store last 60 bytes from the end of the frame into "oldbuffer" 
-	 * to have it at hand if next frame starts with MPEG header */
+	/* Store last 60 bytes from the end of the frame into "oldbuffer"
+	 * to have it at hand if we find a MPEG header near the start
+	 * of the next frame. */
 	memcpy(oldbuffer, buffer + size - 60, 60); 
 	// fprintf(stderr, "Offset %d, matchcount %d\n", offset, matchcount); 
 	return;  

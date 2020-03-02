@@ -181,12 +181,12 @@ void mpa_header_print( mpa_header_t *mh )
 	else if (mh->mode==MPA_MODE_JOINT)	sprintf(mpeg_mode, "Joint Stereo");
 	else if (mh->mode==MPA_MODE_DUAL)	sprintf(mpeg_mode, "Dual");
 	else if (mh->mode==MPA_MODE_MONO)	sprintf(mpeg_mode, "Mono");
-	output_logmessage("   %s layer %d, %d kbps, %d Hz, %s\n", mpeg_std, mh->layer, mh->bitrate, mh->samplerate, mpeg_mode); 
+	output_logmessage("Synced to %s layer %d, %d kbps, %d Hz, %s\n", mpeg_std, mh->layer, mh->bitrate, mh->samplerate, mpeg_mode); 
 }
 
 void ac3_header_print (mpa_header_t *mh) 
 {
-	output_logmessage("  AC-3, %d kbit/s, %d Hz, channels: %s\n", mh->bitrate, mh->samplerate, ac3_channel_name[mh->channel_acmod]);
+	output_logmessage("Synced to AC-3, %d kbit/s, %d Hz, channels: %s\n", mh->bitrate, mh->samplerate, ac3_channel_name[mh->channel_acmod]);
 }
 
 // Parse mpeg audio header
