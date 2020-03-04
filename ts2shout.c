@@ -392,8 +392,8 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 					if(SDT_DESCRIPTOR_SERVICE_ID(description_offset) != global_state->service_id) {
 #ifdef DEBUG
 						fprintf(stderr, "SDT: SDT service %d doesn't match global service id (%d)\n", SDT_DESCRIPTOR_SERVICE_ID(description_offset), global_state->service_id); 
-						DumpHex(description_offset, 188);
-						fprintf(stderr, "----------------\n");
+						// DumpHex(description_offset, 188);
+						// fprintf(stderr, "----------------\n");
 #endif
 					} else {
 						if (SDT_DESCRIPTOR_RUNNING(description_offset) == 0x4) {
@@ -575,6 +575,7 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	eit_table->buffer_valid = 0; 
 	return;
 }
+
 
 int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes ) 
 {
@@ -1044,7 +1045,7 @@ int16_t process_ts_packet( unsigned char * buf )
 	unsigned int pid=0;
 	size_t pes_len;
 	int32_t streamed = 0; 
-	
+
 	// Get the PID of this TS packet
 	pid = TS_PACKET_PID(buf);
 		
@@ -1157,7 +1158,7 @@ int main(int argc, char **argv)
 	} 
 	init_structures();
 	init_rds();
-	output_logmessage("ts2shout version " XSTR(CURRENT_VERSION) " started\n");
+	output_logmessage("ts2shout version " XSTR(CURRENT_VERSION) " compiled " XSTR(CURRENT_DATE) " started\n");
 	output_logmessage("%s %s in %s mode with%s RDS support.\n",
 		(global_state->want_ac3?"AC-3 streaming":"MPEG streaming"),
 		(shoutcast?"with shoutcast StreamTitles":"without shoutcast support, audio only"),

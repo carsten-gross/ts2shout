@@ -93,7 +93,11 @@ static const char *ac3_channel_name[] = {
 static void parse_header(mpa_header_t *mh, u_int32_t header)
 {
 	mh->syncword = (header >> 20) & 0x0fff;
-
+	/* This is for the RDS scan, makes detection of frame header more robust */
+	mh->sync0 = (header>>24) & 0xff;
+	mh->sync1 = (header>>16) & 0xff;
+	mh->sync2 = (header>>8) & 0xff;
+	mh->sync3 = (header) & 0xff;
 	mh->version = 2 - ((header >> 19) & 0x01);
 	if ((mh->syncword & 0x01) == 0)
 		mh->version = 3;

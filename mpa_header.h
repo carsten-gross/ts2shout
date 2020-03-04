@@ -25,6 +25,10 @@
 
 
 typedef struct {
+	uint8_t	sync0;
+	uint8_t	sync1;
+	uint8_t sync2;
+	uint8_t sync3;
 	unsigned int syncword;
 	unsigned int layer;
 	unsigned int version;

@@ -78,30 +78,28 @@ void DumpHex(const void* data, size_t size) {
 
 /* Convert EBU table 1 to latin 1
  * Taken out of http://www.interactive-radio-system.com/docs/EN50067_RDS_Standard.pdf 
- * only german at the moment, therefore no table */
+ * non latin1 characters are translated to "." */
 
-uint8_t ebu2latin1(uint8_t character) {
+static uint8_t ebutable1[] = {
+	/* 0    1    2    3    4    5    6    7    8    9    a    b    c    d    e    f     */
+	0xe1,0xe0,0xe9,0xe8,0xed,0xec,0xf3,0xf2,0xfa,0xf9,0xd1,0xc7,0x2e,0xdf,0xa1,0x2e,	/* 0x80 - 0x8f */
+	0xe2,0xe4,0xea,0xeb,0xee,0xef,0xf4,0xf6,0xfb,0xfc,0xf1,0xe7,0x2e,0x2e,0x2e,0x2e,	/* 0x90 - 0x9f */
+	0xaa,0x2e,0xa9,0x2e,0x2e,0x2e,0x2e,0x2e,0x2e,0x2e,0x2e,0x24,0x2e,0x2e,0x2e,0x2e,	/* 0xa0 - 0xaf */
+	0xba,0xb9,0xb2,0xb3,0xb1,0x2e,0x2e,0x2e,0xb5,0xbf,0xf7,0xb0,0xbc,0xbd,0xbe,0xa7,	/* 0xb0 - 0xbf */
+	0xc1,0xc0,0xc9,0xc8,0xcd,0xcc,0xd3,0xd2,0xda,0xd9,0x2e,0x2e,0x2e,0x2e,0xd0,0x2d,	/* 0xc0 - 0xcf */
+	0xc2,0xc4,0xca,0xcb,0xce,0xcf,0xd4,0xd6,0xdb,0xdc,0x2d,0x2e,0x2e,0x2e,0x2e,0x2e,	/* 0xd0 - 0xdf */
+	0xc3,0xc5,0xc6,0x2e,0x2e,0xdd,0xd5,0xd8,0xde,0x2e,0x2e,0x2e,0x2e,0x2e,0x2e,0xf0,	/* 0xe0 - 0xef */
+	0xe3,0xe5,0xe6,0x2e,0x2e,0xfd,0xf5,0xf8,0xfe,0x2e,0x2e,0x2e,0x2e,0x2e,0x2e,0x2e,	/* 0xf0 - 0xff */
+};
 
-	switch (character) {
-		case 0x91: /* ä "ae" */
-			return 0xe4; 
-		case 0x97: /* ö "oe" */
-			return 0xf6;
-		case 0x99: /* ü "ue" */
-			return 0xfc;
-		case 0x8d: /* ß "ss" */
-			return 0xdf;
-		case 0xd1: /* Ä "AE" */
-			return 0xc4;
-		case 0xd7: /* Ö "OE" */
-			return 0xd6;
-		case 0xd9: /* Ü "UE" */
-			return 0xdc;
-	}
-	if (character < 0x20 || character > 0x7f) {
+static uint8_t ebu2latin1(uint8_t character) {
+	if (character < 0x20) {
 		return '.';
 	}
-	return character; 
+	if (character >= 0x80) {
+		return ebutable1[(character & 0x7f)];
+	}
+	return character;
 }
 
 bool check_message(uint8_t* rds_message, uint8_t size) {
@@ -278,13 +276,40 @@ void rds_data_scan(ts2shout_channel_t *chan) {
 
 	// Easier handling 
 	uint8_t * buffer = chan->buf; 
-	int size = chan->payload_size; 
+	int size = chan->payload_size;
 	if (size < 60) {
 		return;
 	}
-	for (i = 0; i < size - 1; i++) {
-		if( ( buffer[i] == 0xff ) && ( (buffer[i+1] & 0xf0 ) == 0xf0 ) ) {
-			// Found mpeg frame start. The RDS data is RIGHT IN FRONT OF IT
+	/* Special case, mpeg frame start is overlapping, search old and new buffer */
+	if (oldbuffer[57] == chan->mpah.sync0
+		&& oldbuffer[58] == chan->mpah.sync1
+		&& oldbuffer[59] == chan->mpah.sync2
+		&& buffer[0] == chan->mpah.sync3) {
+		output_logmessage("RDS: warning, overlapping frames, case 0\n");
+	}
+	if (oldbuffer[58] == chan->mpah.sync0
+		&& oldbuffer[59] == chan->mpah.sync1
+		&& buffer[0] == chan->mpah.sync2
+		&& buffer[1] == chan->mpah.sync3) {
+		output_logmessage("RDS: warning, overlapping frames, case 1\n");
+	}
+	if (oldbuffer[59] == chan->mpah.sync0
+		&& buffer[0] == chan->mpah.sync1
+		&& buffer[1] == chan->mpah.sync2
+		&& buffer[2] == chan->mpah.sync3) {
+		output_logmessage("RDS: warning, overlapping frames, case 2\n");
+	}
+	for (i = 0; i < size - 3; i++) {
+		if( ( buffer[i] == chan->mpah.sync0 )
+			&& (buffer[i+1] == chan->mpah.sync1 )
+			&& (buffer[i+2] == chan->mpah.sync2 )
+			&& (buffer[i+3] == chan->mpah.sync3 ) ) {
+			/* Sometimes we find ff fx data somewhere inside the frame ... this happens not very often, but
+			   corrupts the display of a RDS message.
+			   Correct solution would be to count the bytes and align it with frame sizes, but it's
+			   hard to keep this correct if MPEG frame sync is lost in main reception loop. Therefore
+			   we just ignore this problem. It doesn't happen very often. */
+			/* Found mpeg frame start. The RDS data is RIGHT IN FRONT OF IT */
 			if ( i < 32 ) {
 				/* If we find the marker at the very beginning of the buffer
 				 * we can expect that the current buffer does not contain all necessary data.
@@ -294,21 +319,28 @@ void rds_data_scan(ts2shout_channel_t *chan) {
 				memcpy(helper + 255 , oldbuffer + i, 60 - i); /* Fill in old buffer contents from last call */
 				memcpy(helper + 255 + 60 - i, buffer, i);     /* and append the new buffer contents */
 				//if ( i > 0) {
-				//	fprintf(stderr, "RDS-Frame with offset! (%d)\n", i);
 				//	DumpHex(buffer, 128);
 				//	fprintf(stderr, "\n");
-				//	DumpHex(helper + 255, 60);
-				//	fprintf(stderr, "Trying to detect: 0x%x, 0x%x, 0x%x\n", helper[255 + 57 - i], helper[255 + 58 -i ], helper[255 + 59 -i ]);
+				//	if (helper[255 + 59 -i ] != 0xfd) {
+				//		fprintf(stderr, "Non RDS-Frame as RDS detected with offset! (%d)\n", i);
+				//		DumpHex(helper, 512);
+				//		fprintf(stderr, "------Original buffer ----------------\n");
+				//		DumpHex(buffer, 512);
+				//		fprintf(stderr, "------oldbuffer-----------------------\n");
+				//		DumpHex(oldbuffer, 60);
+				//	}
+				// fprintf(stderr, "Trying to detect: 0x%x, 0x%x, 0x%x\n", helper[255 + 57 - i], helper[255 + 58 -i ], helper[255 + 59 -i ]);
 				//}
 				if (helper[255 + 59 - i] == 0xfd) {
 					uint8_t rds_data_size = helper[255 + 58 -i];
 					if (rds_data_size > 0) {
 						rds_decode_oneframe(helper, 255 + 60 - i);
 					}
+				} else {
 				}
-			} else { // if ( (i - offset) > chan->mpah.framesize - 30 
+			} else { /* if (i < 32) */
 				if ( buffer[i-1] == 0xfd ) {	
-					// yes: RDS data
+					/* yes: RDS data */
 					uint8_t rds_data_size = buffer[i-2]; 
 					if (rds_data_size > 0) {
 						rds_decode_oneframe(buffer, i);
@@ -330,7 +362,6 @@ void rds_data_scan(ts2shout_channel_t *chan) {
 	 * to have it at hand if we find a MPEG header near the start
 	 * of the next frame. */
 	memcpy(oldbuffer, buffer + size - 60, 60); 
-	// fprintf(stderr, "Offset %d, matchcount %d\n", offset, matchcount); 
 	return;  
 }
 
