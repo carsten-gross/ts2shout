@@ -21,7 +21,7 @@ required header lines. To support this mode libcurl is used for accessing
 tvheadend. This means libcurl (and the corresponding libcurl-dev package for
 compiling) is required for ts2shout to work. In CGI mode it is expected that
 you have a tvheadend or a similar streaming server available that provides the
-MPEG transport stream by a network protocol libcurl understands. Please see for 
+MPEG transport stream by a network protocol libcurl understands. Please see
 a configuration example for apache2 below.
 
 ts2shout outputs a shoutcast stream with the first found mpeg audio stream in
@@ -84,8 +84,6 @@ the Icy-MetaData header given in the http request.
 		# Change names containing other characters in tvheadend frontend 
 		# You can also use http://localhost:9981/stream/channelnumber 
 		# and use channel numbers
-		# If you prepend "°" you'll get an AC3 stream if available
-		SetEnvIf REQUEST_URI "°([-A-Za-z0-9_ ]*)$" PROGRAMMNO=$1 AC3=1
 		SetEnvIf REQUEST_URI "([-A-Za-z0-9_ ]*)$" PROGRAMMNO=$1
 		Options +ExecCGI
 		Action ts2shout /cgi-bin/ts2shout virtual
