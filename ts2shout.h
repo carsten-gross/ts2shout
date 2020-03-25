@@ -250,7 +250,9 @@ typedef struct section_aggregate_s {
 	uint8_t		counter;			/* The counter for the current fragment */
 	uint16_t	offset;				/* Determine the offset in the information buffer */
 	uint16_t	section_length;		/* The section length as found in the first ts packet */
-	uint8_t buffer[EIT_BUF_SIZE];
+	uint8_t		buffer[EIT_BUF_SIZE];
+	uint8_t		offset_buffer[TS_PACKET_SIZE]; /* A buffer for continued tables */
+	uint8_t		ob_used;			/* Pointer wether the offset_buffer is used */
 } section_aggregate_t; 
 
 /* crc32.c */
