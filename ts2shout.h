@@ -61,6 +61,7 @@
 #define TS_PACKET_ADAPTATION(b)		((b[3]&0x30)>>4)
 #define TS_PACKET_CONT_COUNT(b)		((b[3]&0x0F)>>0)
 #define TS_PACKET_ADAPT_LEN(b)		(b[4])
+#define TS_PACKET_POINTER(b)		(uint8_t)((((b[1]&0x40)>>6 == 1) && (b[4] < 183))? b[4] : 0)
 
 /* 
 	Macros for access MPEG-2 EIT packets

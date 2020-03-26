@@ -21,7 +21,7 @@
 	You should have received a copy of the GNU General Public License
 	along with this program; if not, write to the Free Software
 	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-   
+
 */
 
 
@@ -171,7 +171,7 @@ static void extract_pat_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	
 }
 
-/* Get info about an available media streams (we want mp1/mp2 or - not done yet - AC-3) */
+/* Get info about an available media stream (we want mp1/mp2 or AC-3) */
 
 static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned char *start) {
 	if (!global_state->want_ac3) {
@@ -318,19 +318,27 @@ uint8_t	fetch_next(section_aggregate_t* aggregation, uint8_t *buffer, uint8_t* s
  * If an information block doesn't fit into an mpeg-ts frame it is continued in a next frame. The information is
  * directly attached after the PID (TS_HEADER_SIZE = 4 Byte offset). It is possible that there is a multi-ts-frame continuation.
  * Even worse: EIT frames are joined directly together. Even inbetween the MPEG TS frame. No stuffing bytes
- * For the time being we search for stuffing at the end of a mpeg table: stuffing bytes, then we assume the next mpeg packet starts over
- * no stuffing bytes? We check the CRC32 if it is valid, the table is valid: The next one is attached directly */
+ * If mpeg packet says "payload start" the pointer in 4th byte tells where the table start is. This is quite burried in
+ * the documentation.
+ * For the time being we search for stuffing at the end of a mpeg table: stuffing bytes, then we assume the next mpeg packet starts over.
+ * But we respect the pointer anyway (because our access macro is quite failsafe).
+ * No stuffing bytes? We check the CRC32, if it is valid, the table is valid: The next one is attached directly.
+ * TODO Currently the implementation doesn't fetch all information reliably.
+ * This is an issue with mpeg ts stream provided by vdr.
+ * tvheadend prepares the mpeg ts stream in another way and we have no issues with it. */
 
 uint8_t collect_continuation(section_aggregate_t* aggregation, unsigned char *pes_ptr, size_t pes_len, int start_of_pes, unsigned char* ts_full_frame, enum_channel_type type) {
 
 	/* start of the part of the packet we are interested in */
 	unsigned char* start = pes_ptr + start_of_pes;
 
+	/* We are currently aggregating mpeg packets for a continuated frame? */
  	if (aggregation->buffer_valid == 0 && aggregation->continuation > 0 ) { // && (TS_PACKET_PAYLOAD_START(ts_full_frame) == 0) )  {
+		/* yes */
 #ifdef DEBUG
-		fprintf(stderr, "%s: continued frame: offset: %d, counter: %d, section_length: %d, payload_start: %d\n",
+		fprintf(stderr, "%s: continued frame: offset: %d, counter: %d, section_length: %d, payload_start: %d (Pointer: %d)\n",
 			channel_name(type), aggregation->offset, aggregation->counter, aggregation->section_length,
-			TS_PACKET_PAYLOAD_START(ts_full_frame));
+			TS_PACKET_PAYLOAD_START(ts_full_frame), TS_PACKET_POINTER(ts_full_frame));
 			DumpHex(start, TS_PACKET_SIZE - TS_HEADER_SIZE - start_of_pes);
 #endif
 		memcpy(aggregation->buffer + aggregation->offset, start, TS_PACKET_SIZE - TS_HEADER_SIZE - start_of_pes);
@@ -375,15 +383,16 @@ uint8_t collect_continuation(section_aggregate_t* aggregation, unsigned char *pe
 				aggregation->buffer_valid = 0;
 				aggregation->continuation = 1;
 				aggregation->counter = 1;
-				aggregation->section_length = EIT_SECTION_LENGTH(start);
-				aggregation->offset = TS_PACKET_SIZE - start_of_pes -4 ; /* Offset for next TS packet */
+				aggregation->section_length = EIT_SECTION_LENGTH((start + TS_PACKET_POINTER(ts_full_frame)));
+				aggregation->offset = TS_PACKET_SIZE - start_of_pes - 4 - TS_PACKET_POINTER(ts_full_frame) ; /* Offset for next TS packet */
 				/* Copy first frame directly into buffer */
-				memcpy(aggregation->buffer, pes_ptr + start_of_pes, TS_PACKET_SIZE - start_of_pes );
+				memcpy(aggregation->buffer, pes_ptr + start_of_pes + TS_PACKET_POINTER(ts_full_frame), TS_PACKET_SIZE - start_of_pes - TS_PACKET_POINTER(ts_full_frame) );
 				/* Packet is not finished yet, it cannot be handled now */
 			#ifdef DEBUG
-				fprintf (stderr, "%s: Found multi-frame-table 0x%2.2x (last table 0x%2.2x), Section-Length: %d, Section: %d, payload_start: %d\n",
-					channel_name(type), EIT_PACKET_TABLEID(start), EIT_PACKET_LAST_TABLEID(start), EIT_SECTION_LENGTH(start), EIT_SECTION_NUMBER(start),
-					TS_PACKET_PAYLOAD_START(ts_full_frame));
+				fprintf (stderr, "%s: Found multi-frame-table 0x%2.2x (last table 0x%2.2x), Section-Length: %d, Section: %d, payload_start: %d (Pointer %d)\n",
+					channel_name(type), EIT_PACKET_TABLEID((start + TS_PACKET_POINTER(ts_full_frame))), EIT_PACKET_LAST_TABLEID((start + TS_PACKET_POINTER(ts_full_frame))),
+					EIT_SECTION_LENGTH((start + TS_PACKET_POINTER(ts_full_frame))), EIT_SECTION_NUMBER((start + TS_PACKET_POINTER(ts_full_frame))),
+					TS_PACKET_PAYLOAD_START(ts_full_frame), TS_PACKET_POINTER(ts_full_frame));
 				DumpHex(start, 183);
 			#endif
 				return 0;
@@ -436,27 +445,29 @@ uint8_t collect_continuation(section_aggregate_t* aggregation, unsigned char *pe
 			aggregation->offset = 0;
 			memcpy(aggregation->buffer, start, TS_PACKET_SIZE - start_of_pes );
 	#ifdef DEBUG
-			fprintf (stderr, "%s: Single frame-table 0x%2.2x (last table 0x%2.2x), Section-Length: %d (%d), Section: %d, payload_start: %d\n",
+			fprintf (stderr, "%s: Single frame-table 0x%2.2x (last table 0x%2.2x), Section-Length: %d (%d), Section: %d, payload_start: %d (Pointer: %d)\n",
 				channel_name(type), EIT_PACKET_TABLEID(start), EIT_PACKET_LAST_TABLEID(start), EIT_SECTION_LENGTH(start), TS_PACKET_SIZE - start_of_pes, EIT_SECTION_NUMBER(start),
-				TS_PACKET_PAYLOAD_START(ts_full_frame));
+				TS_PACKET_PAYLOAD_START(ts_full_frame), TS_PACKET_POINTER(ts_full_frame));
 	#endif
-		} else if ( ( EIT_SECTION_LENGTH(start) >= (TS_PACKET_SIZE - TS_HEADER_SIZE - 4))
+		} else if ( ( EIT_SECTION_LENGTH((start + TS_PACKET_POINTER(ts_full_frame))) >= (TS_PACKET_SIZE - TS_HEADER_SIZE - 4))
 					&& ( 0 == aggregation->continuation )
 					&& (TS_PACKET_PAYLOAD_START(ts_full_frame) == 1) ) {
 			/* Start of a long frame, will be continued in next frame */
 			aggregation->buffer_valid = 0; /* It's not valid @ the moment */
 			aggregation->continuation = 1;
 			aggregation->counter = 1;
-			aggregation->section_length = EIT_SECTION_LENGTH(start);
-			aggregation->offset = TS_PACKET_SIZE - TS_HEADER_SIZE - start_of_pes; /* Offset for next TS packet */
+			aggregation->section_length = EIT_SECTION_LENGTH((start + TS_PACKET_POINTER(ts_full_frame)));
+			aggregation->offset = TS_PACKET_SIZE - TS_HEADER_SIZE - start_of_pes - TS_PACKET_POINTER(ts_full_frame); /* Offset for next TS packet */
 			/* Copy first frame directly into buffer */
-			memcpy(aggregation->buffer, pes_ptr + start_of_pes, TS_PACKET_SIZE - TS_HEADER_SIZE - start_of_pes );
+			memcpy(aggregation->buffer, pes_ptr + start_of_pes + TS_PACKET_POINTER(ts_full_frame), TS_PACKET_SIZE - TS_HEADER_SIZE - start_of_pes - TS_PACKET_POINTER(ts_full_frame));
 			/* Packet is not finished yet, it cannot be handled now */
 	#ifdef DEBUG
-			fprintf (stderr, "%s: Found multi-frame-table 0x%2.2x (data in first packet %d), Section-Length: %d, Section: %d, payload_start: %d\n",
-				channel_name(type), EIT_PACKET_TABLEID(start), TS_PACKET_SIZE - TS_HEADER_SIZE - start_of_pes, EIT_SECTION_LENGTH(start), EIT_SECTION_NUMBER(start),
-				TS_PACKET_PAYLOAD_START(ts_full_frame));
-			DumpHex(start, TS_PACKET_SIZE - TS_HEADER_SIZE - start_of_pes);
+			fprintf (stderr, "%s: Found multi-frame-table 0x%2.2x (data in first packet %d), Section-Length: %d, Section: %d, payload_start: %d (Pointer: %d)\n",
+				channel_name(type), EIT_PACKET_TABLEID((start + TS_PACKET_POINTER(ts_full_frame))),
+				TS_PACKET_SIZE - TS_HEADER_SIZE - start_of_pes - TS_PACKET_POINTER(ts_full_frame),
+				EIT_SECTION_LENGTH((start + TS_PACKET_POINTER(ts_full_frame))), EIT_SECTION_NUMBER((start+ TS_PACKET_POINTER(ts_full_frame))),
+				TS_PACKET_PAYLOAD_START(ts_full_frame), TS_PACKET_POINTER(ts_full_frame));
+			DumpHex(start + TS_PACKET_POINTER(ts_full_frame), TS_PACKET_SIZE - TS_HEADER_SIZE - start_of_pes - TS_PACKET_POINTER(ts_full_frame));
 	#endif
 			return 0;
 		}
@@ -1119,7 +1130,7 @@ void start_curl_download() {
 	}
 	/* Try to get cached parameters from last session */
 	fetch_cached_parameters(global_state);
-   
+
 	curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
