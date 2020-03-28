@@ -647,15 +647,17 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 			unsigned int stringlen = 0;
 			unsigned char* text1_start = NULL;
 			int text1_len = 0;
-			stringlen = EIT_NAME_LENGTH(description_start);
-			snprintf(short_description, stringlen, "%s", EIT_NAME_CONTENT(description_start) + 1);
+			uint8_t * tmp = EIT_NAME_CONTENT(description_start);
+			/* The same charset issue as with the SDT */
+			stringlen = EIT_NAME_LENGTH(description_start) + (tmp[0] < 0x20? 0 : 1);
+			snprintf(short_description, stringlen, "%s", EIT_NAME_CONTENT(description_start) + (tmp[0] < 0x20? 1 : 0) );
 			while (current_in_position + 60 <= max_size && current_in_position < eit_table->section_length) {
 				stringlen = EIT_NAME_LENGTH(description_start);
-				/* Avoid the character code marker 0x05 for latin1 */
 				text1_start = description_start + EIT_SIZE_DESCRIPTOR_HEADER + stringlen;
 				text1_len = text1_start[0];
 				if (text1_len == 0 || text1_len > max_size) break;
-				memcpy(text_description + current_out_position, text1_start + 2, text1_len - 1);
+				/* Avoid the character code marker 0x05 if it's a latin1 text */
+				memcpy(text_description + current_out_position, text1_start + (text1_start[1] < 0x20 ? 2 : 1), text1_len - ((text1_start[1] < 0x20) ? 1 : 1));
 				/* First round? */
 				if (current_out_position == 0 && ( 70 < max_size) ) {
 					/* Hack, if the overall text is very short, no "~" */
