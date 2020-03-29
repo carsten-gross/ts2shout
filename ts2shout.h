@@ -257,7 +257,8 @@ typedef struct section_aggregate_s {
 } section_aggregate_t; 
 
 /* crc32.c */
-uint32_t crc32 (unsigned char *data, int len); 
+uint32_t crc32 (unsigned char *data, int len);
+uint16_t crc16 (unsigned char *data, int len);
 
 /* In ts2shout.c */
 void output_logmessage(const char *fmt, ... ); 

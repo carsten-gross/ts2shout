@@ -130,13 +130,19 @@ void handle_rt(uint8_t* rds_message, uint8_t size) {
 	return; 
 }
 	
-// Handle a RDS data chunk. 
+/* Handle a RDS data chunk. */
 void handle_message(uint8_t* rds_message, uint8_t size) {
-	// fprintf(stderr, "  **** FULL RDS-Message (%d) ****\n", size); 
-	// DumpHex(rds_message, size); 
+
+	/* Calculate the CRC16 of the RDS frame to get rid of wrong frames */
+	uint16_t crc_result = crc16(rds_message, size);
+	if (crc_result != 0) {
+#ifdef DEBUG
+		output_logmessage("CRC16 error in RDS Message (size=%d, crc_result=0x%x)\n", size, crc_result);
+		DumpHex(rds_message, size);
+#endif
+		return;
+	}
 	
-	// There is a CRC 16 at the end of each message, but I don't know 
-	// now to check it at the moment
 	uint8_t type = rds_message[4];
 	if (! check_message(rds_message, size))  
 		return;
@@ -186,10 +192,9 @@ void handle_message(uint8_t* rds_message, uint8_t size) {
 	return;
 }
 
-// decode exactly one frame
-// char * text points to 255 byte of char 
-// buffer is the buffer of the mpeg-frame and offset is the current read offset
-// it points to the "0xff" of the mpeg frame start!
+/* decode exactly one frame -  char * text points to 255 byte of char
+ * buffer is the buffer of the mpeg-frame and offset is the current read offset
+ * it points to the "0xff" of the mpeg frame start! */
 void rds_decode_oneframe(uint8_t* buffer, int offset) {
 	static uint8_t current_pos = 0;
 	static uint8_t rds_message[255]; 
@@ -305,10 +310,11 @@ void rds_data_scan(ts2shout_channel_t *chan) {
 			&& (buffer[i+2] == chan->mpah.sync2 )
 			&& (buffer[i+3] == chan->mpah.sync3 ) ) {
 			/* Sometimes we find ff fx data somewhere inside the frame ... this happens not very often, but
-			   corrupts the display of a RDS message.
+			   could corrupt the display of a RDS message. As we calculate the crc16 the use of a corrupted
+			   message is unlikely (but not impossible).
 			   Correct solution would be to count the bytes and align it with frame sizes, but it's
 			   hard to keep this correct if MPEG frame sync is lost in main reception loop. Therefore
-			   we just ignore this problem. It doesn't happen very often. */
+			   we just ignore this problem */
 			/* Found mpeg frame start. The RDS data is RIGHT IN FRONT OF IT */
 			if ( i < 32 ) {
 				/* If we find the marker at the very beginning of the buffer
