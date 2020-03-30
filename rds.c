@@ -285,25 +285,6 @@ void rds_data_scan(ts2shout_channel_t *chan) {
 	if (size < 60) {
 		return;
 	}
-	/* Special case, mpeg frame start is overlapping, search old and new buffer */
-	if (oldbuffer[57] == chan->mpah.sync0
-		&& oldbuffer[58] == chan->mpah.sync1
-		&& oldbuffer[59] == chan->mpah.sync2
-		&& buffer[0] == chan->mpah.sync3) {
-		output_logmessage("RDS: warning, overlapping frames, case 0\n");
-	}
-	if (oldbuffer[58] == chan->mpah.sync0
-		&& oldbuffer[59] == chan->mpah.sync1
-		&& buffer[0] == chan->mpah.sync2
-		&& buffer[1] == chan->mpah.sync3) {
-		output_logmessage("RDS: warning, overlapping frames, case 1\n");
-	}
-	if (oldbuffer[59] == chan->mpah.sync0
-		&& buffer[0] == chan->mpah.sync1
-		&& buffer[1] == chan->mpah.sync2
-		&& buffer[2] == chan->mpah.sync3) {
-		output_logmessage("RDS: warning, overlapping frames, case 2\n");
-	}
 	for (i = 0; i < size - 3; i++) {
 		if( ( buffer[i] == chan->mpah.sync0 )
 			&& (buffer[i+1] == chan->mpah.sync1 )
@@ -314,7 +295,8 @@ void rds_data_scan(ts2shout_channel_t *chan) {
 			   message is unlikely (but not impossible).
 			   Correct solution would be to count the bytes and align it with frame sizes, but it's
 			   hard to keep this correct if MPEG frame sync is lost in main reception loop. Therefore
-			   we just ignore this problem */
+			   we just ignore this problem. In very rare cases the mpeg frame border is directly on the
+			   buffer border. Some RDS message will be lost then. This can happen if you've continuity errors. */
 			/* Found mpeg frame start. The RDS data is RIGHT IN FRONT OF IT */
 			if ( i < 32 ) {
 				/* If we find the marker at the very beginning of the buffer

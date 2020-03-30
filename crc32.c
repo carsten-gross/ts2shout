@@ -101,9 +101,11 @@ static uint16_t crc_byte[] = {
  */
 
 uint16_t crc16(uint8_t *data, int len) {
+	int i;
 	uint16_t crc = 0x0000;
-    while (len--)
-        crc = (crc << 8) ^ crc_byte[((crc >> 8) ^ *data++) & 0xff];
+	for (i = 0; i < len; i++) {
+		crc = (crc << 8) ^ crc_byte[((crc >> 8) ^ *data++) & 0xff];
+	}
 	crc ^= 0xe2f0;
-    return crc;
+	return crc;
 }
