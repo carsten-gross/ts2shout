@@ -1,8 +1,11 @@
 # ts2shout
-ts2shout is a small software that acts as a filter or cgi programm to convert a single
-program mpeg transport stream directly to a webradio compatible shoutcast stream. 
-I actually use it for playing DVB-C and DVB-S on Squeezebox players. Please see my page 
-http://www.siski.de/~carsten/radio-streaming-squeezebox.html for more information.
+ts2shout is a small software that acts as a filter or cgi programm to convert a
+single program mpeg transport stream directly to a webradio compatible
+shoutcast stream. The generated shoutcast stream includes broadcast and title
+information. I actually use it for playing DVB-C and DVB-S on Squeezebox
+players. Please see my page
+http://www.siski.de/~carsten/radio-streaming-squeezebox.html for more
+information.
 
 It is based on the dvbshout application by Nicholas J. Humfrey
 (https://github.com/njh/dvbshout) - but the use case here is completly
@@ -35,7 +38,7 @@ DVB-C and Astra 19.2E DVB-S satellite reception.
 German and Swiss radio on DVB-S (and also DVB-C) supports RDS within 
 the MPEG transport stream. The RDS data (Radio Data System, that 
 thing from the Analog Radio on FM) is just inserted inside the 
-padding bytes of the MPEG stream. If you suppy the environment variable RDS 
+padding bytes of the MPEG stream. If you supply the environment variable RDS
 or the command line parameter rds it is preferred over MPEG EIT/EPG data. This
 is useful to get title and artist information in the shoutcast stream. 
 
