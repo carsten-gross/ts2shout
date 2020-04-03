@@ -127,6 +127,14 @@ void handle_rt(uint8_t* rds_message, uint8_t size) {
 		}
 		rds_info.rt[i - 9 + index * 0x40] = ebu2latin1(rds_message[i]); 
 	}
+	/* Check wether "first" message is the same as "second" */
+	if (memcmp(rds_info.rt, rds_info.rt + 0x40, 0x40) == 0) {
+		/* Message is exactly the same */
+#ifdef DEBUG
+		fprintf(stderr, "RDS: Message shorting is going on %.64s == %.64s\n", rds_info.rt, rds_info.rt + 0x40);
+#endif
+		memset(rds_info.rt + 0x40, ' ', 0x40);
+	}
 	return; 
 }
 	
