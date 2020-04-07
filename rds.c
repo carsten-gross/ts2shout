@@ -103,44 +103,6 @@ static uint8_t ebu2latin1(uint8_t character) {
 }
 
 bool check_message(uint8_t* rds_message, uint8_t size) {
-	/* implement crc check */
-	return true;
-}
-
-void handle_rt(uint8_t* rds_message, uint8_t size) {
-	uint8_t msg_len = rds_message[7]; 
-	uint8_t index   = rds_message[8]; 
-	if (index > 1) index = 1; 
-	uint8_t i; 
-	if (msg_len > 0x41) {
-		msg_len = 0x41;
-	}
-	if (msg_len > 0) {
-		for (i = msg_len - 1; i < 0x40; i++) {
-			rds_info.rt[i + index * 0x40] = ' ';
-		}
-	}
-	for (i = 9; i < 8 + msg_len; i++) {
-		/* is some character different? */
-		if (rds_info.rt[i - 9 + index * 0x40] != ebu2latin1(rds_message[i])) {
-			rds_info.rt_changed = true; 
-		}
-		rds_info.rt[i - 9 + index * 0x40] = ebu2latin1(rds_message[i]); 
-	}
-	/* Check wether "first" message is the same as "second" */
-	if (memcmp(rds_info.rt, rds_info.rt + 0x40, 0x40) == 0) {
-		/* Message is exactly the same */
-#ifdef DEBUG
-		fprintf(stderr, "RDS: Message shorting is going on %.64s == %.64s\n", rds_info.rt, rds_info.rt + 0x40);
-#endif
-		memset(rds_info.rt + 0x40, ' ', 0x40);
-	}
-	return; 
-}
-	
-/* Handle a RDS data chunk. */
-void handle_message(uint8_t* rds_message, uint8_t size) {
-
 	/* Calculate the CRC16 of the RDS frame to get rid of wrong frames */
 	uint16_t crc_result = crc16(rds_message, size);
 	if (crc_result != 0) {
@@ -148,9 +110,88 @@ void handle_message(uint8_t* rds_message, uint8_t size) {
 		output_logmessage("CRC16 error in RDS Message (size=%d, crc_result=0x%x)\n", size, crc_result);
 		DumpHex(rds_message, size);
 #endif
-		return;
+		return false;
 	}
+	return true;
+}
+
+void handle_rt(uint8_t* rds_message, uint8_t size) {
+	uint8_t msg_len = rds_message[7]; 
+	uint8_t index   = rds_message[8]; 
+	/* Radiotext consists of two message parts with 64 characters each
+	 * indexed by an index being either 0 or 1 */
+	if (index > 1) index = 1; 
+	uint8_t i; 
+	if (msg_len > 0x41) {
+		msg_len = 0x41;
+	}
+	/* Cleanup old message */
+	if (msg_len > 0) {
+		for (i = msg_len - 1; i < 0x40; i++) {
+			rds_info.rt[i + index * 0x40] = ' ';
+		}
+	}
+	/* Check and convert message to latin1 */
+	for (i = 9; i < 8 + msg_len; i++) {
+		/* is some character different? */
+		if (rds_info.rt[i - 9 + index * 0x40] != ebu2latin1(rds_message[i])) {
+			rds_info.rt_changed = true; 
+		}
+		rds_info.rt[i - 9 + index * 0x40] = ebu2latin1(rds_message[i]); 
+	}
+	/* Shorten message
+	 * Check whether the "first" RT message is the same as the "second"
+	 * in this case delete the "second" and try to rearrange the first (see below) */
+	if (memcmp(rds_info.rt, rds_info.rt + 0x40, 0x40) == 0) {
+		/* Message is exactly the same */
+		bool exchange = 0;
+		char text1[64];
+		char text2[64];
+		uint8_t size1 = 0;
+		uint8_t size2 = 0;
+		uint8_t string_size = 0;
+#ifdef DEBUG
+		fprintf(stderr, "RDS: Message shorting is going on %.64s == %.64s\n", rds_info.rt, rds_info.rt + 0x40);
+#endif
+		memset(rds_info.rt + 0x40, ' ', 0x40);
+		/* SWR1 and perhaps other stations send out "title / interpret"
+		 * we want "interpret - title" to get the correct arrangement on the
+		 * Squeezebox players. This improves the display */
+
+		/* Search end of string */
+		for (i = 1; i < (msg_len - 1); i++) {
+			if (rds_info.rt[i] != ' ') string_size = i;
+		}
+		/* exchange text1 / text2 -> text2 - text1 */
+		for (i = 1; i < (string_size - 1); i++) {
+			if (! exchange) {
+				/* bail out if there is already a `-' inside the text */
+				if (rds_info.rt[i] == '-') {
+					exchange = 1;
+					continue;
+				}
+				if (rds_info.rt[i - 1] == ' ' && rds_info.rt[i] == '/' && rds_info.rt[i + 1] == ' ' ) {
+					/* Found text1 / text2 ? */
+					memcpy(text1, rds_info.rt, i - 1);
+					size1 = i - 1;
+					size2 = string_size - i - 1;
+					memcpy(text2, rds_info.rt + i + 2, size2);
+					/* text2 - text1    this is the new order */
+					memcpy(rds_info.rt, text2, size2);
+					rds_info.rt[size2] = ' ';
+					rds_info.rt[size2 + 1] = '-';
+					rds_info.rt[size2 + 2] = ' ';
+					memcpy(rds_info.rt + size2 + 3, text1, size1);
+					exchange = 1;
+				}
+			}
+		}
+	}
+	return; 
+}
 	
+/* Handle a RDS data chunk. */
+void handle_message(uint8_t* rds_message, uint8_t size) {
 	uint8_t type = rds_message[4];
 	if (! check_message(rds_message, size))  
 		return;
@@ -362,6 +403,6 @@ void rds_data_scan(ts2shout_channel_t *chan) {
 }
 
 void init_rds() {
-	memset(rds_info.rt, 0x20, 0x7f); 
-	return; 
+	memset(rds_info.rt, ' ', 0x80);
+	return;
 }
