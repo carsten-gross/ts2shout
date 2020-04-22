@@ -608,7 +608,7 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 		unsigned char* event_start = EIT_PACKET_EVENTSP(start);
 		unsigned char* description_start = EIT_EVENT_DESCRIPTORP(event_start);
 		unsigned int service_id = EIT_SERVICE_ID(start);
-		if ( service_id != global_state->service_id && global_state->service_id > 0 ) {
+		if ( service_id != global_state->service_id ) {
 #ifdef DEBUG
 			fprintf(stderr, "EIT: service_id %d is wrong (%d)\n", service_id, global_state->service_id);
 #endif
