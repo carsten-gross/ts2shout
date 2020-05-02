@@ -156,13 +156,15 @@ void handle_rt(uint8_t* rds_message, uint8_t size) {
 		memset(rds_info.rt + 0x40, ' ', 0x40);
 		/* SWR1 and perhaps other stations send out "title / interpret"
 		 * we want "interpret - title" to get the correct arrangement on the
-		 * Squeezebox players. This improves the display */
+		 * Squeezebox players. This improves the display.
+		 * It is only called it first message equals the second one */
 
 		/* Search end of string */
 		for (i = 1; i < (msg_len - 1); i++) {
 			if (rds_info.rt[i] != ' ') string_size = i;
 		}
-		/* exchange text1 / text2 -> text2 - text1 */
+		/* exchange "text1 / text2" is converted to "text2 - text1" */
+		/* This is here for SWR1, 2 and 3 */
 		for (i = 1; i < (string_size - 1); i++) {
 			if (! exchange) {
 				/* bail out if there is already a `-' inside the text */
@@ -182,6 +184,36 @@ void handle_rt(uint8_t* rds_message, uint8_t size) {
 					rds_info.rt[size2 + 1] = '-';
 					rds_info.rt[size2 + 2] = ' ';
 					memcpy(rds_info.rt + size2 + 3, text1, size1);
+					exchange = 1;
+				}
+			}
+		}
+		/* exchange "text1 von text2" -> "text2 - text1" */
+		/* This is needed for SRF1~3 - only executed if above function doesn't find something */
+		for (i = 1; i < (string_size - 3); i++) {
+			if (! exchange) {
+				/* bail out if there is already a `-' inside the text */
+				if (rds_info.rt[i] == '-') {
+					exchange = 1;
+					continue;
+				}
+				if (rds_info.rt[i - 1] == ' '
+					&& rds_info.rt[i + 0] == 'v'
+					&& rds_info.rt[i + 1] == 'o'
+					&& rds_info.rt[i + 2] == 'n'
+					&& rds_info.rt[i + 3] == ' ' ) {
+					/* Found text1 / text2 ? */
+					memcpy(text1, rds_info.rt, i - 1);
+					size1 = i - 1;
+					size2 = string_size - i - 3;
+					memcpy(text2, rds_info.rt + i + 4, size2);
+					/* text2 - text1    this is the new order */
+					memcpy(rds_info.rt, text2, size2);
+					rds_info.rt[size2] = ' ';
+					rds_info.rt[size2 + 1] = '-';
+					rds_info.rt[size2 + 2] = ' ';
+					memcpy(rds_info.rt + size2 + 3, text1, size1);
+					memcpy(rds_info.rt + string_size - 1, "     ", 3);
 					exchange = 1;
 				}
 			}

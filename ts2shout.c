@@ -903,8 +903,8 @@ void filter_global_loop(int fd_dvr) {
         }
 		if (bytes_read > 0 && bytes_read < TS_PACKET_SIZE) {
 			output_logmessage("filter_global_loop: short read, only got %d bytes, instead of %d, trying to resync\n", bytes_read, TS_PACKET_SIZE);
-			// trying to start over, to get a full read by waiting a little bit (150 ms)
-			poll(NULL, 0, 150);
+			// trying to start over, to get a full read by waiting a little bit (450 ms)
+			poll(NULL, 0, 450);
 			/* Throw rest of the not read bytes away by trying to read it in the buffer and jump back to read full mpeg frames */
 			bytes_read = read(fd_dvr,buf,TS_PACKET_SIZE - bytes_read);
 			global_state->ts_sync_error += 1;
