@@ -144,6 +144,7 @@ static void ts_continuity_check( ts2shout_channel_t *chan, int ts_cc )
 static void extract_pat_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes ) {
 	unsigned char* start = NULL;
 	start = pes_ptr + start_of_pes;
+	unsigned int possible_pmt = 0;
 #ifdef DEBUG
     fprintf (stderr, "PAT: Found data, table 0x%2.2d (Section length %d), transport_stream_id %d, section %d, last section %d\n",
 		PAT_TABLE_ID(start),
@@ -152,23 +153,30 @@ static void extract_pat_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 		PAT_SECTION_NUMBER(start),
 		PAT_LAST_SECTION_NUMBER(start));
 #endif
-	unsigned char* programmes = PAT_PROGRAMME_START(start);
-	/* Add PMT if not already there */
-	if (! channel_map[PAT_PROGRAMME_PMT(programmes)] ) {
+	unsigned char* one_program = PAT_PROGRAMME_START(start);
+	/* tvheadend and vdr rewrite PAT, but some mp2t serving systems only remove PMT pids and leave PAT as it is.
+	 * Therefore we have to scan PAT for alle PMT pids. If there are also more than one PMT in the stream a
+	 * "random" (the first seen PMT) program is selected. */
+	// if (! channel_map[PAT_PROGRAMME_PMT(one_program)] ) { // This was here bevor, but does not work anymore, because we allow more than one PMT result
+	/* Add PMT if we don't have a valid transport_stream_id already */
+	if ( global_state->transport_stream_id  != PAT_TRANSPORT_STREAM_ID(start)) {
 		if (crc32(start, PAT_SECTION_LENGTH(start) + 3) == 0) {
-			global_state->transport_stream_id = PAT_TRANSPORT_STREAM_ID(start);
-			output_logmessage("extract_pat_payload(): programme has transport_stream_id: %d\n", global_state->transport_stream_id );
-			add_channel(CHANNEL_TYPE_PMT, PAT_PROGRAMME_PMT(programmes));
-			// global_state->programm_id;  PAT_TRANSPORT_STREAM_ID(start);
-		} else {
-			// fprintf (stderr, "PAT: crc32 does not match: calculated %d, expected 0\n", crc32(start, PAT_SECTION_LENGTH(start) + 3));
-		}
-			
-	}
+			unsigned int i = 0;
 #ifdef DEBUG
-	fprintf (stderr, "PAT: Programme 1, MAP-PID %d\n", PAT_PROGRAMME_PMT(programmes));
+			DumpHex(one_program, PAT_SECTION_LENGTH(start) - 8);
 #endif
-	
+			/* Scan for possible, valid PMTs */
+			global_state->transport_stream_id = PAT_TRANSPORT_STREAM_ID(start);
+			for (i = 0; i < ( PAT_SECTION_LENGTH(start) - 8 - 2 /* CRC */ ); i += 4) {
+				if (PAT_PROGRAMME_PMT( (one_program + i) ) > 0x11) { // Only add normal tables, not NIT et.al.
+					add_channel(CHANNEL_TYPE_PMT, PAT_PROGRAMME_PMT( (one_program + i) ));
+					possible_pmt += 1;
+				}
+			}
+		}
+		output_logmessage("extract_pat_payload(): Added %d possible PMT id(s) with transport_stream_id: %d.\n", possible_pmt, global_state->transport_stream_id);
+	}
+	return;
 }
 
 /* Get info about an available media stream (we want mp1/mp2 or AC-3) */
