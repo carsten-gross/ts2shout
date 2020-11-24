@@ -2,6 +2,7 @@
  *  MPEG Audio Header Parser
  *
  *  Copyright (C) 2006 Nicholas J. Humfrey
+ *  Copyright (C) 2020 Carsten Gross
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -21,8 +22,6 @@
 
 #ifndef _MPA_HEADER_H
 #define _MPA_HEADER_H
-
-
 
 typedef struct {
 	uint8_t	sync0;
@@ -50,13 +49,15 @@ typedef struct {
 	unsigned int framesize;
 } mpa_header_t;
 
-
+#define MPA_MODE_STEREO     0
+#define MPA_MODE_JOINT      1
+#define MPA_MODE_DUAL       2
+#define MPA_MODE_MONO       3
 
 // Get parse the header of a frame of mpeg audio
 int mpa_header_parse( const unsigned char* buf, mpa_header_t *mh);
 
 void mpa_header_print( mpa_header_t *mh );
-void mpa_header_debug( mpa_header_t *mh );
 
 /* AC-3 parsing */
 int ac3_header_parse( const unsigned char* buf, mpa_header_t *mh);

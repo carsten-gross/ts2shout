@@ -188,11 +188,17 @@ static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned
 			|| PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x0f /* MPEG 2 audio */) {
 			/* We found a mp1/mp2 media stream */
 			global_state->service_id = PMT_PROGRAM_NUMBER(start);
-			output_logmessage("add_payload_from_pmt(): Found mp1/mp2 audio stream in PID %d (service_id %d)\n",
+			output_logmessage("add_payload_from_pmt(): Found %s audio stream in PID %d (service_id %d)\n",
+				PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x03 ? "MPEG 1" : ((PMT_STREAM_TYPE(pmt_stream_info_offset)) == 0x0f ? "AAC" : "MPEG 2"),
 				PMT_PID(pmt_stream_info_offset),
 				global_state->service_id );
 			add_channel(CHANNEL_TYPE_PAYLOAD, PMT_PID(pmt_stream_info_offset));
 			global_state->payload_added = 1;
+			global_state->stream_type = AUDIO_MODE_MPEG;
+			if (PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x0f) {
+				global_state->stream_type = AUDIO_MODE_AAC;
+			}
+			global_state->mime_type = mime_type(global_state->stream_type);
 		}
 	} else {
 		/* 0x06 private data (very likely AC-3), scan a maximum of 2 stream descriptors to try to get the AC-3 descriptor */
@@ -212,6 +218,8 @@ static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned
 					output_logmessage("add_payload_from_pmt(): Found AC-3 audio stream in PID %d\n", PMT_PID(pmt_stream_info_offset));
 					add_channel(CHANNEL_TYPE_PAYLOAD, PMT_PID(pmt_stream_info_offset));
 					global_state->payload_added = 1;
+					global_state->stream_type = AUDIO_MODE_AC3;
+					global_state->mime_type = mime_type(global_state->stream_type);
 				}
 			} else {
 #ifdef DEBUG
@@ -220,9 +228,12 @@ static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned
 				output_logmessage("add_payload_from_pmt(): Found AC-3 audio stream in PID %d\n", PMT_PID(pmt_stream_info_offset));
 				add_channel(CHANNEL_TYPE_PAYLOAD, PMT_PID(pmt_stream_info_offset));
 				global_state->payload_added = 1;
+				global_state->stream_type = AUDIO_MODE_AC3;
+				global_state->mime_type = mime_type(global_state->stream_type);
 			}
 		}
 	}
+	return;
 }
 
 
@@ -740,6 +751,9 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 	// Got some data to write out?
 	if (es_ptr) {
 		// Scan through Elementary Stream (ES)
+#ifdef DEBUG
+				DumpHex(es_ptr, es_len);
+#endif
 		// and try and find MPEG audio stream header
 		while (!chan->synced && es_len>= 6) {
 			// Valid header?
@@ -997,26 +1011,19 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 			&& strlen(global_state->station_name) > 0
 			&& global_state->br > 0
 			&& global_state->sr > 0) {
-
-			char *content_type = NULL;
-			if (global_state->want_ac3) {
-				content_type = "Content-Type: audio/ac3";
-			} else {
-				content_type = "Content-Type: audio/mpeg";
-			}
 			if (shoutcast) {
 				/* Strlen: of all the static stuff: 114 Byte */
-				snprintf(header, STR_BUF_SIZE, "%.50s\n" \
+				snprintf(header, STR_BUF_SIZE, "Content-Type: %s\n" \
 						"Connection: close\n" \
 						"icy-br: %d\n" \
 						"icy-sr: %d\n" \
 						"icy-name: %.120s\n" \
 						"icy-metaint: %d\n\n",
-						content_type,
+						global_state->mime_type,
 						global_state->br * 1000, global_state->sr, global_state->station_name, SHOUTCAST_METAINT);
 			} else {
-				snprintf(header, STR_BUF_SIZE, "%s\n" \
-						"Connection: close\n\n", content_type);
+				snprintf(header, STR_BUF_SIZE, "Content-Type: %s\n" \
+						"Connection: close\n\n", global_state->mime_type);
 			}
 			fwrite(header, strlen(header), 1, stdout);
 			fflush(stdout);

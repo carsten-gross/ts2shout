@@ -197,6 +197,12 @@ typedef enum {
 	FOREACH_CHANNEL_TYPE(GENERATE_ENUM)
 } enum_channel_type;
 
+typedef enum {
+	AUDIO_MODE_NONE,
+	AUDIO_MODE_MPEG,
+	AUDIO_MODE_AAC,
+	AUDIO_MODE_AC3 } enum_stream_type; 
+
 /* Structure containing single channel */
 typedef struct ts2shout_channel_s {
 	int num;				// channel number
@@ -241,10 +247,12 @@ typedef struct programm_info_s {
 	uint8_t	want_ac3;					/* do we want AC-3 output */
 	uint8_t prefer_rds;					/* do we prefer RDS  - instead of EPG? (only if there is RDS) */
 	uint8_t found_rds;					/* We found RDS, don't use EIT any longer */
-	uint16_t	transport_stream_id;		/* The transport stream id of the wanted programm stream (important for EIT/SDT scan) */
+	uint16_t	transport_stream_id;	/* The transport stream id of the wanted programm stream (important for EIT/SDT scan) */
+	enum_stream_type stream_type;		/* The type of transport stream (abstract), fetch from PAT/PMT */
+	const char * mime_type;				/* The MIME type (e.g. audio/mpeg) of the current stream (indirect from PAT/PMT) */
 } programm_info_t; 
 
-/* An aggregator, currently used only for EIT (event information table) */
+/* An aggregator for all types of transport stream tables */
 typedef struct section_aggregate_s {
 	uint8_t		buffer_valid;		/* Buffer is valid */
 	uint8_t		continuation;		/* A continued (EIT) information block is found */
@@ -282,6 +290,8 @@ void init_structures();
 int add_channel(enum_channel_type channel_type, int pid); 
 /* Get nice channel_name */
 const char* channel_name(enum_channel_type channel_type); 
+/* Get mime/type of stream output */
+const char* mime_type(enum_stream_type stream_type); 
 unsigned char *utf8(unsigned char* in, unsigned char* out); 
 
 void add_cache(programm_info_t* global_state); 
