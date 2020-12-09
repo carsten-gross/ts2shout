@@ -136,7 +136,7 @@
 /* b[11] future use */
 #define SDT_FIRST_DESCRIPTOR(b) (b + 11)
 #define SDT_DESCRIPTOR_SERVICE_ID(b)	(uint16_t)(b[0]<<8 | b[1])
-#define SDT_DESCRIPTOR_RUNNING(b)       ((b[3] & 0xc0)>>5)
+#define SDT_DESCRIPTOR_RUNNING(b)       ((b[3] & 0xe0)>>5)
 #define SDT_DESCRIPTOR_LOOP_LENGTH(b)   (uint16_t)((b[3] & 0x0f)<<8 | b[4])
 #define SDT_DESCRIPTOR_CONTENT(b)		(b + 5)
 /* Descriptor of the SDT */
@@ -171,22 +171,22 @@
 #define PES_PACKET_HEAD_LEN(b)		(b[8])
 
 #define PES_PACKET_PTS(b)		((uint32_t)((b[9] & 0x0E) << 29) | \
-					 (uint32_t)(b[10] << 22) | \
-					 (uint32_t)((b[11] & 0xFE) << 14) | \
-					 (uint32_t)(b[12] << 7) | \
-					 (uint32_t)(b[13] >> 1))
+					(uint32_t)(b[10] << 22) | \
+					(uint32_t)((b[11] & 0xFE) << 14) | \
+					(uint32_t)(b[12] << 7) | \
+					(uint32_t)(b[13] >> 1))
 
 #define PES_PACKET_DTS(b)		((uint32_t)((b[14] & 0x0E) << 29) | \
-					 (uint32_t)(b[15] << 22) | \
-					 (uint32_t)((b[16] & 0xFE) << 14) | \
-					 (uint32_t)(b[17] << 7) | \
-					 (uint32_t)(b[18] >> 1))
+					(uint32_t)(b[15] << 22) | \
+					(uint32_t)((b[16] & 0xFE) << 14) | \
+					(uint32_t)(b[17] << 7) | \
+					(uint32_t)(b[18] >> 1))
 
 #define FOREACH_CHANNEL_TYPE(CHANNEL_TYPE) \
-        CHANNEL_TYPE(CHANNEL_TYPE_PAT)  \
-        CHANNEL_TYPE(CHANNEL_TYPE_SDT)  \
-        CHANNEL_TYPE(CHANNEL_TYPE_EIT)  \
-        CHANNEL_TYPE(CHANNEL_TYPE_PMT)  \
+		CHANNEL_TYPE(CHANNEL_TYPE_PAT)  \
+		CHANNEL_TYPE(CHANNEL_TYPE_SDT)  \
+		CHANNEL_TYPE(CHANNEL_TYPE_EIT)  \
+		CHANNEL_TYPE(CHANNEL_TYPE_PMT)  \
 		CHANNEL_TYPE(CHANNEL_TYPE_PAYLOAD) \
 
 #define GENERATE_ENUM(ENUM) ENUM,
@@ -230,7 +230,7 @@ typedef struct ts2shout_channel_s {
 /* global information about the received programme */
 typedef struct programm_info_s {
 	uint8_t	info_available;				/* Information available */
- 	uint8_t payload_added;				/* Payload is added, no longer scan PAT and PMT */
+	uint8_t payload_added;				/* Payload is added, no longer scan PAT and PMT */
 	uint8_t	output_payload;				/* All header information is known, therefore audiodata can be read and output (for CGI mode) */
 	uint8_t sdt_fromstream;				/* Station name fetched from stream */
 	uint8_t	cache_written;				/* cache written in current session */
@@ -239,9 +239,9 @@ typedef struct programm_info_s {
 	char old_stream_title[STR_BUF_SIZE]; /* Old StreamTitle, that was given in last session */
 	uint32_t br;						/* Bitrate of stream e.g. 320000 kBit/s			*/
 	uint32_t sr;						/* Streamrate of stream e.g. 48 kHz == 48000 Hz */
-    uint64_t bytes_streamed_read;		/* Total bytes read from stream */
-    uint64_t bytes_streamed_write;		/* Total bytes write to stdout/streamed to application/CGI */
-    uint16_t ts_sync_error;				/* Total global number of sync errors */
+	uint64_t bytes_streamed_read;		/* Total bytes read from stream */
+	uint64_t bytes_streamed_write;		/* Total bytes write to stdout/streamed to application/CGI */
+	uint16_t ts_sync_error;				/* Total global number of sync errors */
 	uint16_t service_id;				/* The service_id, aka program_id */
 	char *programme;					/* the environment variable PROGRAMMNO (no hassling arround with REDIRECT_ ) */
 	uint8_t	want_ac3;					/* do we want AC-3 output */

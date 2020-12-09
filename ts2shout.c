@@ -163,7 +163,7 @@ static void extract_pat_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 		if (crc32(start, PAT_SECTION_LENGTH(start) + 3) == 0) {
 			unsigned int i = 0;
 #ifdef DEBUG
-			DumpHex(one_program, PAT_SECTION_LENGTH(start) - 8);
+			// DumpHex(one_program, PAT_SECTION_LENGTH(start) - 8);
 #endif
 			/* Scan for possible, valid PMTs */
 			global_state->transport_stream_id = PAT_TRANSPORT_STREAM_ID(start);
@@ -497,9 +497,13 @@ uint8_t collect_continuation(section_aggregate_t* aggregation, unsigned char *pe
 	return 0;
 }
 
+/* For normal people SDT contains the Service description, i.e. the Station name. Some satellite stations are transmitting garbage
+ * and remove the data from SDT and use PMT or whatever for it.
+ * Sometimes it is just missing or removed by broken MPEG software */
+
 static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes, unsigned char* ts_full_frame) {
-    unsigned char* start = NULL;
-    start = pes_ptr + start_of_pes;
+	unsigned char* start = NULL;
+	start = pes_ptr + start_of_pes;
 	/* collect up continuation frames */
 	if (! collect_continuation(sdt_table, pes_ptr, pes_len, start_of_pes, ts_full_frame, CHANNEL_TYPE_SDT)) {
 		return;
@@ -510,7 +514,7 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	}
 	start = sdt_table->buffer;
 #ifdef DEBUG
-    fprintf (stderr, "SDT: Found data, table 0x%2.2x (Section length %d), program number %d, section %d, last section %d\n",
+	fprintf (stderr, "SDT: Found data, table 0x%2.2x (Section length %d), program number %d, section %d, last section %d\n",
 		PMT_TABLE_ID(start),
 		PMT_SECTION_LENGTH(start),
 		PMT_PROGRAM_NUMBER(start),	
@@ -532,14 +536,24 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 			if ( PMT_TABLE_ID(start) == 0x42 ) {
 				/* Table 0x42 contains information about current stream, we only want programm "running" (see mpeg standard for this hardcoded stuff) */
 				while (description_offset < (SDT_FIRST_DESCRIPTOR(start) +  PMT_SECTION_LENGTH(start))) {
+					if(PMT_PROGRAM_NUMBER(start) != global_state->transport_stream_id) {
+#ifdef DEBUG
+						fprintf(stderr, "SDT: SDT programm-number %d doesn't match global transport_stream_id %d\n", PMT_PROGRAM_NUMBER(start), global_state->transport_stream_id);
+#endif
+#if 0
+					// I thought this is correct, but it doesn't work for the new french tranponder 12285V on Astra 19.2
 					if(SDT_DESCRIPTOR_SERVICE_ID(description_offset) != global_state->service_id) {
 #ifdef DEBUG
-						fprintf(stderr, "SDT: SDT service %d doesn't match global service id (%d)\n", SDT_DESCRIPTOR_SERVICE_ID(description_offset), global_state->service_id);
+						fprintf(stderr, "SDT: SDT service %d doesn't match global service id (%d), transport_stream_id %d, programm_id %d\n",
+							SDT_DESCRIPTOR_SERVICE_ID(description_offset), global_state->service_id,
+							global_state->transport_stream_id, -1);
 						// DumpHex(description_offset, 188);
 						// fprintf(stderr, "----------------\n");
 #endif
+#endif
 					} else {
-						if (SDT_DESCRIPTOR_RUNNING(description_offset) == 0x4) {
+						if (SDT_DESCRIPTOR_RUNNING(description_offset) == 0x4 ||
+							SDT_DESCRIPTOR_RUNNING(description_offset) == 0x1 /* FRENCH transponder?! */ ) {
 							unsigned char* description_content = SDT_DESCRIPTOR_CONTENT(description_offset);
 							char provider_name[STR_BUF_SIZE];
 							char service_name[STR_BUF_SIZE];
@@ -548,7 +562,8 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 							/* Service 0x02, 0x0A, 0x07: (Digital) Radio */
 							if (SDT_DC_SERVICE_TYPE(description_content) == 0x2
 								|| SDT_DC_SERVICE_TYPE(description_content) == 0x0a
-								|| SDT_DC_SERVICE_TYPE(description_content) == 0x07 ) {
+								|| SDT_DC_SERVICE_TYPE(description_content) == 0x07 
+								|| SDT_DC_SERVICE_TYPE(description_content) == 0x01 /* Also CSAT transponder 12285 V: radio stations are marked as SD-TV */ ) {
 								if (SDT_DC_PROVIDER_NAME_LENGTH(description_content) < STR_BUF_SIZE) {
 									if (SDT_DC_PROVIDER_NAME(description_content)[0] < 0x20) {
 										/* MPEG Standard has very sophisticated charset encoding, therefore a simple Hack for my setup */
@@ -729,10 +744,9 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 {
 	unsigned char* es_ptr=NULL;
 	size_t es_len=0;
-	
+
 	int32_t bytes_written = 0; 	
-	
-	
+
 	// Start of a PES header?
 	if ( start_of_pes ) {
 		// Parse the PES header
@@ -751,9 +765,6 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 	// Got some data to write out?
 	if (es_ptr) {
 		// Scan through Elementary Stream (ES)
-#ifdef DEBUG
-				DumpHex(es_ptr, es_len);
-#endif
 		// and try and find MPEG audio stream header
 		while (!chan->synced && es_len>= 6) {
 			// Valid header?
@@ -806,10 +817,10 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 	 * cache only if the payload channel is in sync, and we have the SDT ready.
 	 * we have easy access to the sync data here, therefore we access it
 	 * here - Perhaps we can move this elsewhere TODO */
-    if ((!global_state->cache_written) &&
+	if ((!global_state->cache_written) &&
 		cgi_mode					   &&
-        global_state->sdt_fromstream   &&
-        chan->synced) {
+		global_state->sdt_fromstream   &&
+		chan->synced) {
 		add_cache(global_state);
 		global_state->cache_written = 1;
 	}
@@ -918,11 +929,11 @@ void filter_global_loop(int fd_dvr) {
 	while (! Interrupted ) {
 		bytes_read = read(fd_dvr, buf, TS_PACKET_SIZE);
 		global_state->bytes_streamed_read += bytes_read;
-        if (bytes_read == 0) {
-            output_logmessage("filter_global_loop: read from stream %.2f MB, wrote %.2f MB, no bytes left to read - EOF. Exiting.\n",
-                              (float)global_state->bytes_streamed_read/mb_conversion, (float)global_state->bytes_streamed_write/mb_conversion);
-            break;
-        }
+		if (bytes_read == 0) {
+			output_logmessage("filter_global_loop: read from stream %.2f MB, wrote %.2f MB, no bytes left to read - EOF. Exiting.\n",
+				(float)global_state->bytes_streamed_read/mb_conversion, (float)global_state->bytes_streamed_write/mb_conversion);
+			break;
+		}
 		if (bytes_read > 0 && bytes_read < TS_PACKET_SIZE) {
 			output_logmessage("filter_global_loop: short read, only got %d bytes, instead of %d, trying to resync\n", bytes_read, TS_PACKET_SIZE);
 			// trying to start over, to get a full read by waiting a little bit (450 ms)
@@ -986,8 +997,8 @@ void filter_global_loop(int fd_dvr) {
  * This is no big deal because this code is much faster then needed for processing */
 
 struct memory_struct {
-  unsigned char *memory;
-  size_t size;
+	unsigned char *memory;
+	size_t size;
 };
 
 /* libcurls write callback, set with CURLOPT_WRITEFUNCTION if in CGI mode */
@@ -995,14 +1006,14 @@ struct memory_struct {
 
 static size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp)
 {
-    size_t realsize = size * nmemb;
+	size_t realsize = size * nmemb;
 	size_t already_processed = 0;
 	char header[STR_BUF_SIZE];
-    struct memory_struct *mem = (struct memory_struct *)userp;
+	struct memory_struct *mem = (struct memory_struct *)userp;
 
 	/* process the data we've stored from the last run? */
 	unsigned char * buf = contents;
-	
+
 	/* Do we have to output the HTTP Header? */
 	if (!global_state->output_payload) {
 		/* not all data items were available, check wether they are available now.
@@ -1029,7 +1040,7 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 			fflush(stdout);
 			global_state->output_payload = 1;
 		}
-	}	
+	}
 	
 	/* Do we have data from the last run that we must use for the next one? */
 	if (mem->size > 0) {
@@ -1058,7 +1069,6 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 			} else {
 				/* an error occured */
 				already_processed = 0;
-
 				goto write_error;
 			}
 		} else {
@@ -1069,9 +1079,9 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 		}
 	}
 	/* in some cases curl fetches an "non-even amount" of mpeg-ts data, means we get some remaining data
-        * we save it here for later processing. "already_processed != real_size" is the special case where a remainder of
-		* a 2nd read is exactly the right size.
-		* (e.g. libcurl reads the maximum of 16384 byte, remaining 28 byte, next read 160 byte == 188 byte == full mpeg ts frame */
+	 * we save it here for later processing. "already_processed != real_size" is the special case where a remainder of
+	 * a 2nd read is exactly the right size.
+	 * (e.g. libcurl reads the maximum of 16384 byte, remaining 28 byte, next read 160 byte == 188 byte == full mpeg ts frame */
 	if (already_processed > 0 && already_processed < realsize && already_processed + TS_PACKET_SIZE > realsize && ( already_processed != realsize) ) {
 		// output_logmessage("DEBUG: uneven amount remaining: %d bytes (curl called us with %d bytes)\n", realsize - already_processed, realsize);
 		memcpy(mem->memory, buf, realsize - already_processed);
@@ -1083,28 +1093,28 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 write_error:
 		already_processed = 0;
 	}
-    return already_processed;
+	return already_processed;
 }
 
 void start_curl_download() {
 
 	/* exactly one full ts frame can be stored */
-    struct memory_struct chunk;
-    chunk.size = 0;
-    chunk.memory = calloc(1, TS_PACKET_SIZE);
+	struct memory_struct chunk;
+	chunk.size = 0;
+	chunk.memory = calloc(1, TS_PACKET_SIZE);
 	char user_agent_string[STR_BUF_SIZE];
 	char url[STR_BUF_SIZE];
 
-    curl_global_init(CURL_GLOBAL_ALL);
-    CURL *curl = curl_easy_init();
-    if (! curl) {
-        output_logmessage("Cannot initialize libcurl at all, exiting\n");
-        exit(1);
-    }
+	curl_global_init(CURL_GLOBAL_ALL);
+	CURL *curl = curl_easy_init();
+	if (! curl) {
+		output_logmessage("Cannot initialize libcurl at all, exiting\n");
+		exit(1);
+	}
 	/* prepare headers for accessing tvheadend */
-    struct curl_slist *header = NULL;
+	struct curl_slist *header = NULL;
 	/* We only want mpeg transport */
-    header = curl_slist_append(header, "Accept: audio/mp2t");
+	header = curl_slist_append(header, "Accept: audio/mp2t");
 	/* Limit headers to a length that makes sense */
 	if (getenv("HTTP_USER_AGENT")) {
 		snprintf(user_agent_string, STR_BUF_SIZE, "User-Agent: ts2shout for %.200s", getenv("HTTP_USER_AGENT"));
@@ -1116,8 +1126,8 @@ void start_curl_download() {
 		snprintf(s, STR_BUF_SIZE, "Forwarded: by \"%s\"; for \"%.200s\"; proto=http", "127.0.0.1", getenv("REMOTE_ADDR"));
 		header = curl_slist_append(header, s);
 	}
-    header = curl_slist_append(header, user_agent_string);
-    int res = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header);
+	header = curl_slist_append(header, user_agent_string);
+	int res = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header);
 	if (getenv("REDIRECT_PROGRAMMNO")) {
 		global_state->programme = getenv("REDIRECT_PROGRAMMNO");
 	} else {
@@ -1149,33 +1159,33 @@ void start_curl_download() {
 	fetch_cached_parameters(global_state);
 
 	curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
 	/* Set timeout to avoid hangin processes */
 	/* abort if slower than 2000 bytes/sec during 5 seconds */
 	curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 5L);
 	curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 2000L);
 #ifdef DEBUG
-    curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 #endif
-    res = curl_easy_perform(curl);
+	res = curl_easy_perform(curl);
 	// We almost always get the write error during our writes, because we tell
 	// libcurl that we want to stop download by return "0" in the write callback
 	// We don't need the errors in the log
-    if( (res != CURLE_OK) && (res != CURLE_WRITE_ERROR) ) {
-        output_logmessage("curl_easy_perform() failed on %s: %s\n",
-	        url, curl_easy_strerror(res));
-    } else {
-        /* Do something */
-    }
+	if( (res != CURLE_OK) && (res != CURLE_WRITE_ERROR) ) {
+		output_logmessage("curl_easy_perform() failed on %s: %s\n",
+			url, curl_easy_strerror(res));
+	} else {
+		/* Do something */
+	}
 	output_logmessage("curl_download: %s after fetching %.2f MB and writing %.2f MB. Exiting.\n",
 		((Interrupted >0 && Interrupted <=32)?strsignal(Interrupted):"streaming error"),
 		(float)global_state->bytes_streamed_read/mb_conversion, (float)global_state->bytes_streamed_write/mb_conversion );
-    /* cleanup curl stuff */
-    curl_easy_cleanup(curl);
-    free(chunk.memory);
-    curl_global_cleanup();
-    return;
+	/* cleanup curl stuff */
+	curl_easy_cleanup(curl);
+	free(chunk.memory);
+	curl_global_cleanup();
+	return;
 }
 
 
@@ -1207,7 +1217,7 @@ int16_t process_ts_packet( unsigned char * buf )
 	if ( TS_PACKET_SCRAMBLING(buf) ) {
 		output_logmessage("process_ts_packet: Warning: PID %d is scrambled.\n", pid);
 		return TS_SOFT_ERROR;
-	}	
+	}
 
 	// Location of and size of PES payload
 	pes_ptr = &buf[4];

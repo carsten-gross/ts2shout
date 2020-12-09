@@ -39,8 +39,8 @@ unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, ts
 	unsigned char stream_id = PES_PACKET_STREAM_ID(buf);
 
 	if( PES_PACKET_SYNC_BYTE1(buf) != 0x00 ||
-	    PES_PACKET_SYNC_BYTE2(buf) != 0x00 ||
-	    PES_PACKET_SYNC_BYTE3(buf) != 0x01 )
+		PES_PACKET_SYNC_BYTE2(buf) != 0x00 ||
+		PES_PACKET_SYNC_BYTE3(buf) != 0x01 )
 	{
 		output_logmessage("Invalid PES header (pid: %d).\n", chan->pid);
 		return 0;
@@ -57,7 +57,7 @@ unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, ts
 		}
 		if (chan->pes_stream_id == 0) {
 			// keep the first stream we see
-			chan->pes_stream_id = stream_id;	
+			chan->pes_stream_id = stream_id;
 		} else {
 			output_logmessage("Ignoring additional audio stream ID 0x%x (pid: %d).\n", stream_id, chan->pid);
 			return 0;

@@ -387,19 +387,6 @@ void rds_data_scan(ts2shout_channel_t *chan) {
 				memset(helper, 0xff, 512); /* write termination character all over the buffer */
 				memcpy(helper + 255 , oldbuffer + i, 60 - i); /* Fill in old buffer contents from last call */
 				memcpy(helper + 255 + 60 - i, buffer, i);     /* and append the new buffer contents */
-				//if ( i > 0) {
-				//	DumpHex(buffer, 128);
-				//	fprintf(stderr, "\n");
-				//	if (helper[255 + 59 -i ] != 0xfd) {
-				//		fprintf(stderr, "Non RDS-Frame as RDS detected with offset! (%d)\n", i);
-				//		DumpHex(helper, 512);
-				//		fprintf(stderr, "------Original buffer ----------------\n");
-				//		DumpHex(buffer, 512);
-				//		fprintf(stderr, "------oldbuffer-----------------------\n");
-				//		DumpHex(oldbuffer, 60);
-				//	}
-				// fprintf(stderr, "Trying to detect: 0x%x, 0x%x, 0x%x\n", helper[255 + 57 - i], helper[255 + 58 -i ], helper[255 + 59 -i ]);
-				//}
 				if (helper[255 + 59 - i] == 0xfd) {
 					uint8_t rds_data_size = helper[255 + 58 -i];
 					if (rds_data_size > 0) {
