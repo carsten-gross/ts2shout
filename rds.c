@@ -94,6 +94,11 @@ static uint8_t ebutable1[] = {
 
 static uint8_t ebu2latin1(uint8_t character) {
 	if (character < 0x20) {
+		if (character == 0x0d || character == 0x0a) {
+			/* NDR2 uses this. It's documented as proposed linefeed or CR. 
+			   We replace it with space because we use a single line display */
+			return ' '; 
+		}
 		return '.';
 	}
 	if (character >= 0x80) {
@@ -134,6 +139,11 @@ void handle_rt(uint8_t* rds_message, uint8_t size) {
 	/* Check and convert message to latin1 */
 	for (i = 9; i < 8 + msg_len; i++) {
 		/* is some character different? */
+#ifdef DEBUG
+		if (( rds_message[i] < 0x20 || rds_message[i] > 0x7f) && ebu2latin1(rds_message[i]) == 0x2e) {
+			fprintf(stderr, "RDS: SORRY could not convert character code 0x%x into latin1.\n", rds_message[i]); 
+		}
+#endif 
 		if (rds_info.rt[i - 9 + index * 0x40] != ebu2latin1(rds_message[i])) {
 			rds_info.rt_changed = true; 
 		}
