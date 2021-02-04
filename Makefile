@@ -1,11 +1,10 @@
 # DEBUG changes behaviour completly and is for developing / debugging the application
 # DEBUG disabled is the correct setting
 
-CC=gcc
-CFLAGS=-O2 -Wall
-LDFLAGS=
+CC ?= gcc
+CFLAGS ?=-O2 -Wall
 # DEBUG=-DDEBUG -g
-PREFIX=/usr/local
+PREFIX ?= /usr/local
 CURRENT_VERSION:=$(shell git describe 2>/dev/null)
 ifeq ($(CURRENT_VERSION),)
 CURRENT_VERSION := "unknown"
