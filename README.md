@@ -56,7 +56,10 @@ and it can be decoded by ffmpeg or played with mplayer.
 
 ts2shout can be used in conjunction with tvheadend and apache2 as follows: 
 
-Activate module mod_action (a2enmod action) on your apache2
+Activate modules (if not already done) mod_cgi and mod_action (a2enmod cgi ;
+a2enmod action) on your apache2.  Take care that ts2shout is placed in the
+cgi-bin of the webserver, on debian it is searched in /usr/lib/cgi-bin. Be careful
+with permissions and reachability - ts2shout is not intended for worldwide accessibility.
 
 On a Debian system change /etc/apache2/sites-available/000-default.conf as follows. Use a virtual server
 from your apache2 installation as you wish. 
