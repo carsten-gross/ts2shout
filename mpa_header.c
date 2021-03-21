@@ -126,10 +126,10 @@ static void parse_header(mpa_header_t *mh, u_int32_t header)
 	mh->version = (header >> 18) & 0x03;
 	mh->layer = (header >> 17) & 0x03;	
 #ifdef DEBUG
-	//fprintf(stderr, "--------------------------------- parse_header ----------------------------\n");
-	//DumpHex((unsigned char*)mh, 4);
-	//fprintf(stderr, "Version: %d\n", mh->version);
-	// fprintf(stderr, "Layer: %d\n", mh->layer);
+	fprintf(stderr, "--------------------------------- parse_header ----------------------------\n");
+	DumpHex((unsigned char*)mh, 4);
+	fprintf(stderr, "Version: %d\n", mh->version);
+	 fprintf(stderr, "Layer: %d\n", mh->layer);
 #endif
 	/* The stream type is set via the flags from the PMT */
 	if (global_state->stream_type == AUDIO_MODE_AAC) {

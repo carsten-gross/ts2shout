@@ -157,7 +157,7 @@ static void extract_pat_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	/* tvheadend and vdr rewrite PAT, but some mp2t serving systems only remove PMT pids and leave PAT as it is.
 	 * Therefore we have to scan PAT for alle PMT pids. If there are also more than one PMT in the stream a
 	 * "random" (the first seen PMT) program is selected. */
-	// if (! channel_map[PAT_PROGRAMME_PMT(one_program)] ) { // This was here bevor, but does not work anymore, because we allow more than one PMT result
+	// if (! channel_map[PAT_PROGRAMME_PMT(one_program)] ) { // This was here before, but does not work anymore, because we allow more than one PMT result
 	/* Add PMT if we don't have a valid transport_stream_id already */
 	if ( global_state->transport_stream_id  != PAT_TRANSPORT_STREAM_ID(start)) {
 		if (crc32(start, PAT_SECTION_LENGTH(start) + 3) == 0) {
@@ -179,23 +179,27 @@ static void extract_pat_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	return;
 }
 
-/* Get info about an available media stream (we want mp1/mp2 or AC-3) */
+/* Get info about an available media stream (we want mp1/mp2/mp4 or AC-3) */
 
 static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned char *start) {
 	if (!global_state->want_ac3) {
 		if (PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x03 /* MPEG 1 audio */
 			|| PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x04 /* MPEG 2 audio */
-			|| PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x0f /* MPEG 2 audio */) {
-			/* We found a mp1/mp2 media stream */
+			|| PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x0f /* MPEG 2 audio */
+			|| PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x11 /* MPEG 4 AAC LATM */ ) {
+			/* We found a mp1/mp2/mp4 media stream */
 			global_state->service_id = PMT_PROGRAM_NUMBER(start);
 			output_logmessage("add_payload_from_pmt(): Found %s audio stream in PID %d (service_id %d)\n",
-				PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x03 ? "MPEG 1" : ((PMT_STREAM_TYPE(pmt_stream_info_offset)) == 0x0f ? "AAC" : "MPEG 2"),
+				PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x03 ? "MPEG 1" :
+				((PMT_STREAM_TYPE(pmt_stream_info_offset)) == 0x0f ? "AAC" :
+				((PMT_STREAM_TYPE(pmt_stream_info_offset)) == 0x11 ? "MPEG-4 AAC" : "MPEG 2" )),
 				PMT_PID(pmt_stream_info_offset),
 				global_state->service_id );
 			add_channel(CHANNEL_TYPE_PAYLOAD, PMT_PID(pmt_stream_info_offset));
 			global_state->payload_added = 1;
 			global_state->stream_type = AUDIO_MODE_MPEG;
-			if (PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x0f) {
+			if (PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x0f ||
+				PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x11 ) {
 				global_state->stream_type = AUDIO_MODE_AAC;
 			}
 			global_state->mime_type = mime_type(global_state->stream_type);
@@ -237,7 +241,7 @@ static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned
 }
 
 
-/* Get stream info out of the PMT (program map table). We are only interested for radio mp1/mp2 streams or
+/* Get stream info out of the PMT (program map table). We are only interested in radio mp1/mp2/aac streams or
  * alternativly for AC-3 (not done yet). */
 
 static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes ) {
