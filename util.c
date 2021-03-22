@@ -41,7 +41,7 @@ static const char *channel_type_name[] = {
     FOREACH_CHANNEL_TYPE(GENERATE_STRING)
 };
 
-static const char *mime_type_string[] = { 	"none", "audio/mpeg", "audio/aac", "audio/ac3" };
+static const char *mime_type_string[] = { 	"none", "audio/mpeg", "audio/aac", "audio/aacp", "audio/ac3" };
 
 /* initialize the structure after allocating memory for it */
 void init_channel (enum_channel_type channel_type, int pid, int current_channel) {
@@ -100,7 +100,7 @@ const char* channel_name(enum_channel_type channel_type) {
 
 /* Get MIME/TYPE for streamed audio-stream */
 const char* mime_type(enum_stream_type stream_type) {
-	if (stream_type >= 0 && stream_type < 4) {
+	if (stream_type >= 0 && stream_type < 5) {
 		return mime_type_string[stream_type];
 	} else {
 		return "error";

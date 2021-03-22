@@ -199,9 +199,16 @@ typedef enum {
 
 typedef enum {
 	AUDIO_MODE_NONE,
-	AUDIO_MODE_MPEG,
-	AUDIO_MODE_AAC,
+	AUDIO_MODE_MPEG,	/* MPEG-1/2 .. normal format for audio */
+	AUDIO_MODE_AAC,		/* Streamtype 0x0f ...simple AAC in MPEG-2 encapsulation */
+	AUDIO_MODE_AACP,	/* Streamtype 0x11 ... HE-AAC in MPEG-4 encapsulation */
 	AUDIO_MODE_AC3 } enum_stream_type; 
+
+typedef enum {
+	CHARSET_LATIN1	= 5,
+	CHARSET_COMPLEX = 0x10,
+	CHARSET_UTF8	= 0x15
+} enum_charset; 
 
 /* Structure containing single channel */
 typedef struct ts2shout_channel_s {

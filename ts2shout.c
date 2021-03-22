@@ -198,9 +198,10 @@ static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned
 			add_channel(CHANNEL_TYPE_PAYLOAD, PMT_PID(pmt_stream_info_offset));
 			global_state->payload_added = 1;
 			global_state->stream_type = AUDIO_MODE_MPEG;
-			if (PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x0f ||
-				PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x11 ) {
+			if (PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x0f ) {
 				global_state->stream_type = AUDIO_MODE_AAC;
+			} else if ( PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x11 ) {
+				global_state->stream_type = AUDIO_MODE_AACP;
 			}
 			global_state->mime_type = mime_type(global_state->stream_type);
 		}
@@ -684,11 +685,17 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 			uint16_t max_size = EIT_EVENT_LOOPLENGTH(event_start);
 			unsigned int stringlen = 0;
 			unsigned char* text1_start = NULL;
+			enum_charset text_charset; 
 			int text1_len = 0;
 			uint8_t * tmp = EIT_NAME_CONTENT(description_start);
 			/* The same charset issue as with the SDT */
 			stringlen = EIT_NAME_LENGTH(description_start) + (tmp[0] < 0x20? 0 : 1);
 			snprintf(short_description, stringlen, "%s", EIT_NAME_CONTENT(description_start) + (tmp[0] < 0x20? 1 : 0) );
+			if (tmp[0] < 0x20) {
+				text_charset = tmp[0];
+			} else {
+				text_charset = CHARSET_LATIN1;
+			}
 			while (current_in_position + 60 <= max_size && current_in_position < eit_table->section_length) {
 				stringlen = EIT_NAME_LENGTH(description_start);
 				text1_start = description_start + EIT_SIZE_DESCRIPTOR_HEADER + stringlen;
@@ -707,7 +714,7 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 					current_out_position += text1_len - 1;
 				}
 #ifdef DEBUG
-				fprintf(stderr, "DEBUG: text1: %s, in_pos: %d (%d), text1_len: %d, global_len: %d\n", text_description, current_in_position,
+				fprintf(stderr, "DEBUG: text1 (charset: 0x%x): %s, in_pos: %d (%d), text1_len: %d, global_len: %d\n", text1_start[1], text_description, current_in_position,
 					current_in_position + text1_len + EIT_SIZE_DESCRIPTOR_HEADER + stringlen, text1_len, max_size);
 #endif
 				description_start = description_start + EIT_SIZE_DESCRIPTOR_HEADER + stringlen + 1 + text1_len + 1;
@@ -730,7 +737,13 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 					// It's needed in iso8859-1 for StreamTitle, but in UTF-8 for logging
 					unsigned char utf8_message[STR_BUF_SIZE];
 					strcpy(global_state->stream_title, tmp_title);
-					output_logmessage("EIT: Current transmission `%s'\n", utf8((unsigned char*)short_description, utf8_message));
+					if (text_charset == CHARSET_LATIN1) {
+						output_logmessage("EIT: Current transmission `%s'\n", utf8((unsigned char*)short_description, utf8_message));
+					} else if ( text_charset == CHARSET_UTF8 ) {
+						output_logmessage("EIT: Current transmission `%s'\n", short_description); 
+					} else {
+						output_logmessage("EIT: Current transmission (MPEG-Charset: 0x%x, output likely garbaled)`%s'\n", utf8((unsigned char*)short_description, utf8_message));
+					}
 				}
 			} else {
 #ifdef DEBUG
