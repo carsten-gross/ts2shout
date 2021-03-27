@@ -144,17 +144,19 @@ static void parse_header(mpa_header_t *mh, u_int32_t header)
 			global_state->br = mh->bitrate;
 		}
 	} else if ( global_state->stream_type == AUDIO_MODE_AACP) {
-		/* NOT IMPLEMENTED YET */
+		/* TODO NOT IMPLEMENTED YET */
 		/* AAC / HE-AAC / COMPLEX / LATM/LOAS */
 		/* This code is not correct. Has to be fixed */
 		mh->samplerate_index = (header>>12) & 0x0f;
 		mh->samplerate		= aac_samplerate[mh->samplerate_index];
 		mh->channel_acmod	= (header>>6) & 0x7;
 		/* TODO Oergs.. we have to set something until we implement fetching bitrate for AAC */
-		mh->bitrate      = 16;
+		mh->bitrate = 16;
 		global_state->sr = mh->samplerate;
-		global_state->br = mh->bitrate;
-		/* TODO */
+		/* If Bitrate is coming from DVB information (PMT) use it from there */
+		if (global_state->br == 0 ) {
+			global_state->br = mh->bitrate;
+		}
 	} else 	if (global_state->stream_type == AUDIO_MODE_MPEG) {
 		if (mh->version != 0 && mh->layer != 0) {
 			mh->error_protection = ((header >> 16) & 0x01) ? 0 : 1;

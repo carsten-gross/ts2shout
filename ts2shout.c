@@ -185,14 +185,14 @@ static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned
 	if (!global_state->want_ac3) {
 		if (PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x03 /* MPEG 1 audio */
 			|| PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x04 /* MPEG 2 audio */
-			|| PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x0f /* MPEG 2 audio */
+			|| PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x0f /* MPEG 2 AAC */
 			|| PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x11 /* MPEG 4 AAC LATM */ ) {
 			/* We found a mp1/mp2/mp4 media stream */
 			global_state->service_id = PMT_PROGRAM_NUMBER(start);
 			output_logmessage("add_payload_from_pmt(): Found %s audio stream in PID %d (service_id %d)\n",
 				PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x03 ? "MPEG 1" :
 				((PMT_STREAM_TYPE(pmt_stream_info_offset)) == 0x0f ? "AAC" :
-				((PMT_STREAM_TYPE(pmt_stream_info_offset)) == 0x11 ? "MPEG-4 AAC" : "MPEG 2" )),
+				((PMT_STREAM_TYPE(pmt_stream_info_offset)) == 0x11 ? "HE-AAC" : "MPEG 2" )),
 				PMT_PID(pmt_stream_info_offset),
 				global_state->service_id );
 			add_channel(CHANNEL_TYPE_PAYLOAD, PMT_PID(pmt_stream_info_offset));
@@ -204,6 +204,28 @@ static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned
 				global_state->stream_type = AUDIO_MODE_AACP;
 			}
 			global_state->mime_type = mime_type(global_state->stream_type);
+			/* If AACP AAC with LATM search for Bitrate parameter in Description */
+			if (global_state->stream_type == AUDIO_MODE_AACP) {
+				unsigned int offset = 0;
+#ifdef DEBUG
+				fprintf(stderr, "HE-AAC - Searching PMT descriptors: Length of descriptors %d\n", PMT_INFO_LENGTH(pmt_stream_info_offset));
+#endif
+				while (offset < PMT_INFO_LENGTH(pmt_stream_info_offset)) {
+					unsigned char * descriptor_pointer = PMT_FIRST_STREAM_DESCRIPTORP(pmt_stream_info_offset) + offset;
+					offset = offset + DESCRIPTOR_LENGTH (descriptor_pointer) + 2; /* The 2 is the static size of the offset and the tag byte itself */
+#ifdef DEBUG
+					fprintf(stderr, "HE-AAC - Searching PMT descriptors, current type 0x%x: next descriptor @%d\n", DESCRIPTOR_TAG(descriptor_pointer), offset);
+#endif
+					/* Maximum Bitrate descriptor, found description in wireshark and on the internet */
+					if ( DESCRIPTOR_TAG(descriptor_pointer) == 0x0e ) {
+						int bitrate;
+						bitrate = ((descriptor_pointer[2] & 0x3f)<<16) + (descriptor_pointer[3]<<8) + descriptor_pointer[4];
+						bitrate = bitrate * 50;
+						global_state->br = bitrate / 1024;
+						output_logmessage("add_payload_from_pmt(): HE-AAC maximum bitrate %.1f kB/s\n", (float)bitrate/1024);
+					}
+				}
+			}
 		}
 	} else {
 		/* 0x06 private data (very likely AC-3), scan a maximum of 2 stream descriptors to try to get the AC-3 descriptor */
@@ -564,21 +586,21 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 							char service_name[STR_BUF_SIZE];
 							uint8_t service_name_length = description_content[SDT_DC_PROVIDER_NAME_LENGTH(description_content) + 4];
 							unsigned char * tmp = description_content + SDT_DC_PROVIDER_NAME_LENGTH(description_content) + 5;
+							if (SDT_DC_PROVIDER_NAME_LENGTH(description_content) < STR_BUF_SIZE) {
+								if (SDT_DC_PROVIDER_NAME(description_content)[0] < 0x20) {
+									/* MPEG Standard has very sophisticated charset encoding, therefore a simple Hack for my setup */
+									snprintf(provider_name, SDT_DC_PROVIDER_NAME_LENGTH(description_content), "%s", SDT_DC_PROVIDER_NAME(description_content + 1) );
+								} else {
+									snprintf(provider_name, SDT_DC_PROVIDER_NAME_LENGTH(description_content) + 1, "%s", SDT_DC_PROVIDER_NAME(description_content));
+								}
+							}
+							/* like above, but written compacted, if first character is smaller 0x20 it's the charset encoding */
+							snprintf(service_name, service_name_length + (tmp[0]< 0x20?0:1), "%s", tmp + (tmp[0]< 0x20?1:0));
 							/* Service 0x02, 0x0A, 0x07: (Digital) Radio */
 							if (SDT_DC_SERVICE_TYPE(description_content) == 0x2
 								|| SDT_DC_SERVICE_TYPE(description_content) == 0x0a
 								|| SDT_DC_SERVICE_TYPE(description_content) == 0x07 
 								|| SDT_DC_SERVICE_TYPE(description_content) == 0x01 /* Also CSAT transponder 12285 V: radio stations are marked as SD-TV */ ) {
-								if (SDT_DC_PROVIDER_NAME_LENGTH(description_content) < STR_BUF_SIZE) {
-									if (SDT_DC_PROVIDER_NAME(description_content)[0] < 0x20) {
-										/* MPEG Standard has very sophisticated charset encoding, therefore a simple Hack for my setup */
-										snprintf(provider_name, SDT_DC_PROVIDER_NAME_LENGTH(description_content), "%s", SDT_DC_PROVIDER_NAME(description_content + 1) );
-									} else {
-										snprintf(provider_name, SDT_DC_PROVIDER_NAME_LENGTH(description_content) + 1, "%s", SDT_DC_PROVIDER_NAME(description_content));
-									}
-								}
-								/* like above, but written compacted, if first character is smaller 0x20 it's the charset encoding */
-								snprintf(service_name, service_name_length + (tmp[0]< 0x20?0:1), "%s", tmp + (tmp[0]< 0x20?1:0));
 								/* Sometime we get garbage only store if we have a service_name with length > 0 */
 								if (strlen(service_name) > 0) {
 									/* service name is latin1 in most cases */
@@ -592,8 +614,15 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 								}
 							} else {
 								/* If service type is 0xff it's very likely just a stuffing frame without any content */
-								if (SDT_DC_SERVICE_TYPE(description_content) != 0xff) {
-									output_logmessage("SDT: Warning: Stream (also) contains unkown service with id 0x%2x\n", SDT_DC_SERVICE_TYPE(description_content));
+								unsigned char utf8_service_name[STR_BUF_SIZE];
+								if (strlen(service_name) > 0) {
+									unsigned char utf8_service_name[STR_BUF_SIZE];
+									utf8((unsigned char*)service_name, utf8_service_name);
+								}
+								if (SDT_DC_SERVICE_TYPE(description_content) == 0x1f) {
+									output_logmessage("SDT: Warning: Stream (also) contains service HEVC HDTV (%s)\n", utf8_service_name); 
+								} else if (SDT_DC_SERVICE_TYPE(description_content) != 0xff) {
+									output_logmessage("SDT: Warning: Stream (also) contains unkown service with id 0x%2x (%s)\n", SDT_DC_SERVICE_TYPE(description_content), utf8_service_name);
 								}
 							}
 						}
@@ -667,7 +696,7 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 			EIT_SECTION_LENGTH(start));
 #endif
 		/* 0x4d = Short event descriptor found, transport_stream matches */
-		if (EIT_DESCRIPTOR_TAG(description_start) == 0x4d && EIT_TRANSPORT_STREAM_ID(start) == global_state->transport_stream_id ) {
+		if (DESCRIPTOR_TAG(description_start) == 0x4d && EIT_TRANSPORT_STREAM_ID(start) == global_state->transport_stream_id ) {
 			/* Now calculate crc32, because we want to do something with the data */
 			if (crc32(start, EIT_SECTION_LENGTH(start)+3) != 0) {
 				#ifdef DEBUG

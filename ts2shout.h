@@ -88,8 +88,8 @@
 #define EIT_EVENT_LOOPLENGTH(b)		(uint16_t)( ((b[10]&0x0f)<<8) | b[11] )
 #define EIT_EVENT_DESCRIPTORP(b)	(b + 12)
 
-#define EIT_DESCRIPTOR_TAG(b)		(b[0]) 
-#define EIT_DESCRIPTOR_LENGTH(b)	(b[1])
+#define DESCRIPTOR_TAG(b)		(b[0])
+#define DESCRIPTOR_LENGTH(b)	(b[1])
 /* #define EIT_DESCRIPTOR_STREAM_CONTENT(b)	(b[2] & 0xf)
 #define EIT_DESCRIPTOR_COMPONENT_TYPE(b) (b[3])
 #define EIT_DESCRIPTOR_COMPONENT_TAG(b) (b[4])
