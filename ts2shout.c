@@ -622,7 +622,8 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 							/* Service 0x02, 0x0A, 0x07: (Digital) Radio */
 							if (SDT_DC_SERVICE_TYPE(description_content) == 0x2
 								|| SDT_DC_SERVICE_TYPE(description_content) == 0x0a
-								|| SDT_DC_SERVICE_TYPE(description_content) == 0x07 ) {
+								|| SDT_DC_SERVICE_TYPE(description_content) == 0x07
+								|| SDT_DC_SERVICE_TYPE(description_content) == 0x01 /* broken station has SD-TV set */ ) {
 								/* Sometime we get garbage only store if we have a service_name with length > 0 */
 								if (strlen(service_name) > 0) {
 									/* service name is latin1 in most cases */
