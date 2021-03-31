@@ -247,8 +247,8 @@ static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned
 				int bitrate;
 				bitrate = ((descriptor_pointer[2] & 0x3f)<<16) + (descriptor_pointer[3]<<8) + descriptor_pointer[4];
 				bitrate = bitrate * 50;
-				global_state->br = bitrate / 1024;
-				output_logmessage("add_payload_from_pmt(): %s maximum bitrate %.1f kB/s\n", stream_type_name, (float)bitrate/1024);
+				global_state->br = (bitrate * 8 ) / 1024;
+				output_logmessage("add_payload_from_pmt(): %s maximum bitrate %.1f kByte/s (%.1f kBit/s)\n", stream_type_name, (float)bitrate/1024, ((float)bitrate/1024) * 8);
 			}
 			/* AC-3 Descriptor */
 			if ( global_state->want_ac3 && DESCRIPTOR_TAG(descriptor_pointer) == 0x6a ) {
