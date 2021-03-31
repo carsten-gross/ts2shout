@@ -28,7 +28,8 @@ test cases it is always possible to use it at the command prompt to manually
 convert an mpeg transport stream into native mpeg audio. You have to use
 the option \fB noshout \fR then.
 .sp
-Used as a webfilter it converts from MIME type audio/mp2t to audio/mpeg (or audio/ac3 if ac3 environment is set)
+Used as a webfilter it converts from MIME type audio/mp2t to audio/mpeg, audio/aac or audio/aacp (or audio/ac3 if ac3 environment is set). 
+The to be used MIME type is autodetected using the contents of the MPEG-TS PMT section.
 
 .SH OPTIONS
 .B noshout	
