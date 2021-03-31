@@ -1,7 +1,7 @@
 /*
 
 	util.c
-	(C) Carsten Gross <carsten@siski.de> 2018, 2019
+	(C) Carsten Gross <carsten@siski.de> 2018-2021
 	
 	Copyright notice:
 	

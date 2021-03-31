@@ -3,7 +3,7 @@
  *  and rudimentary AC-3 Audio Header Parser
  *
  *  Copyright (C) 2006 Nicholas J. Humfrey
- *  Copyright (C) 2018-2020 Carsten Groß
+ *  Copyright (C) 2018-2021 Carsten Groß
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public

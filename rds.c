@@ -1,7 +1,7 @@
 /*
  *  RDS parser
  *
- *  Copyright (C) 2020 Carsten Groß 
+ *  Copyright (C) 2020-2021 Carsten Groß 
  * 
  *  Totally out of control:
  *  German and Swiss radio on DVB-S (and also DVB-C) supports RDS within 

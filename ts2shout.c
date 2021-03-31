@@ -1,7 +1,7 @@
 /*
 
 	ts2shout.c
-	(C) Carsten Gross <carsten@siski.de> 2018, 2019
+	(C) Carsten Gross <carsten@siski.de> 2018-2021
 	reworked from dvbshout.c written by
 	(C) Dave Chapman <dave@dchapman.com> 2001, 2002.
 	(C) Nicholas J Humfrey <njh@aelius.com> 2006.
@@ -182,90 +182,105 @@ static void extract_pat_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 /* Get info about an available media stream (we want mp1/mp2/mp4 or AC-3) */
 
 static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned char *start) {
-	if (!global_state->want_ac3) {
-		if (PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x03 /* MPEG 1 audio */
-			|| PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x04 /* MPEG 2 audio */
-			|| PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x0f /* MPEG 2 AAC */
-			|| PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x11 /* MPEG 4 AAC LATM */ ) {
-			/* We found a mp1/mp2/mp4 media stream */
-			global_state->service_id = PMT_PROGRAM_NUMBER(start);
-			output_logmessage("add_payload_from_pmt(): Found %s audio stream in PID %d (service_id %d)\n",
-				PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x03 ? "MPEG 1" :
-				((PMT_STREAM_TYPE(pmt_stream_info_offset)) == 0x0f ? "AAC" :
-				((PMT_STREAM_TYPE(pmt_stream_info_offset)) == 0x11 ? "HE-AAC" : "MPEG 2" )),
-				PMT_PID(pmt_stream_info_offset),
-				global_state->service_id );
-			add_channel(CHANNEL_TYPE_PAYLOAD, PMT_PID(pmt_stream_info_offset));
-			global_state->payload_added = 1;
-			global_state->stream_type = AUDIO_MODE_MPEG;
-			if (PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x0f ) {
+	unsigned int stream_type;
+	char *stream_type_name = "";
+	enum {
+		NO_AUDIO_STREAM,
+		CHECK_DESCRIPTOR,
+		AUDIO_STREAM } audio_all_checks = NO_AUDIO_STREAM; /* Local use only: 0 = no audio found, 1 = unsufficent descriptor data, 2 = OK */
+	stream_type = PMT_STREAM_TYPE(pmt_stream_info_offset);
+	switch ( stream_type ) {
+		case 0x03:	/* MPEG 1 audio */
+			if (! global_state->want_ac3 ) {
+				stream_type_name = "MPEG 1";
+				global_state->stream_type = AUDIO_MODE_MPEG;
+				audio_all_checks = AUDIO_STREAM;
+			}
+			break;
+		case 0x04:	/* MPEG 2 audio */
+			if (! global_state->want_ac3 ) {
+				stream_type_name = "MPEG 2";
+				global_state->stream_type = AUDIO_MODE_MPEG;
+				audio_all_checks = AUDIO_STREAM;
+			}
+			break;
+		case 0x0f:	/* MPEG 2 AAC */
+			if (! global_state->want_ac3 ) {
+				stream_type_name = "AAC";
 				global_state->stream_type = AUDIO_MODE_AAC;
-			} else if ( PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x11 ) {
+				audio_all_checks = AUDIO_STREAM;
+			}
+			break;
+		case 0x11:  /* MPEG 4 AAC LATM */
+			if (! global_state->want_ac3 ) {
+				stream_type_name = "HE-AAC";
 				global_state->stream_type = AUDIO_MODE_AACP;
+				audio_all_checks = AUDIO_STREAM;
 			}
-			global_state->mime_type = mime_type(global_state->stream_type);
-			/* If AACP AAC with LATM search for Bitrate parameter in Description */
-			if (global_state->stream_type == AUDIO_MODE_AACP) {
-				unsigned int offset = 0;
-#ifdef DEBUG
-				fprintf(stderr, "HE-AAC - Searching PMT descriptors: Length of descriptors %d\n", PMT_INFO_LENGTH(pmt_stream_info_offset));
-#endif
-				while (offset < PMT_INFO_LENGTH(pmt_stream_info_offset)) {
-					unsigned char * descriptor_pointer = PMT_FIRST_STREAM_DESCRIPTORP(pmt_stream_info_offset) + offset;
-					offset = offset + DESCRIPTOR_LENGTH (descriptor_pointer) + 2; /* The 2 is the static size of the offset and the tag byte itself */
-#ifdef DEBUG
-					fprintf(stderr, "HE-AAC - Searching PMT descriptors, current type 0x%x: next descriptor @%d\n", DESCRIPTOR_TAG(descriptor_pointer), offset);
-#endif
-					/* Maximum Bitrate descriptor, found description in wireshark and on the internet */
-					if ( DESCRIPTOR_TAG(descriptor_pointer) == 0x0e ) {
-						int bitrate;
-						bitrate = ((descriptor_pointer[2] & 0x3f)<<16) + (descriptor_pointer[3]<<8) + descriptor_pointer[4];
-						bitrate = bitrate * 50;
-						global_state->br = bitrate / 1024;
-						output_logmessage("add_payload_from_pmt(): HE-AAC maximum bitrate %.1f kB/s\n", (float)bitrate/1024);
-					}
-				}
-			}
-		}
-	} else {
-		/* 0x06 private data (very likely AC-3), scan a maximum of 2 stream descriptors to try to get the AC-3 descriptor */
-		if ( PMT_STREAM_TYPE(pmt_stream_info_offset) == 0x06 ) {
-			unsigned char *first_stream_descriptor = PMT_FIRST_STREAM_DESCRIPTORP(pmt_stream_info_offset);
-			/* 0x6a AC-3 descriptor found? */
-#ifdef DEBUG
-			fprintf(stderr, "private-stream found, first stream descriptor 0x%x\n", PMT_STREAM_DESCRIPTOR_TAG(first_stream_descriptor));
-#endif
-			if (PMT_STREAM_DESCRIPTOR_TAG(first_stream_descriptor) != 0x6a) {
-				/* no, next */
-				unsigned char *second_stream_descriptor = first_stream_descriptor + PMT_NEXT_STREAM_DESCRIPTOROFF(first_stream_descriptor);
-#ifdef DEBUG
-				fprintf(stderr, "private-stream found, second stream descriptor 0x%x, using offset %d\n", PMT_STREAM_DESCRIPTOR_TAG(second_stream_descriptor), PMT_NEXT_STREAM_DESCRIPTOROFF(first_stream_descriptor));
-#endif
-				if (PMT_STREAM_DESCRIPTOR_TAG(second_stream_descriptor) == 0x6a) {
-					output_logmessage("add_payload_from_pmt(): Found AC-3 audio stream in PID %d\n", PMT_PID(pmt_stream_info_offset));
-					add_channel(CHANNEL_TYPE_PAYLOAD, PMT_PID(pmt_stream_info_offset));
-					global_state->payload_added = 1;
-					global_state->stream_type = AUDIO_MODE_AC3;
-					global_state->mime_type = mime_type(global_state->stream_type);
-				}
-			} else {
-#ifdef DEBUG
-				fprintf(stderr, "private-stream found, first stream descriptor 0x%x\n", PMT_STREAM_DESCRIPTOR_TAG(first_stream_descriptor));
-#endif
-				output_logmessage("add_payload_from_pmt(): Found AC-3 audio stream in PID %d\n", PMT_PID(pmt_stream_info_offset));
-				add_channel(CHANNEL_TYPE_PAYLOAD, PMT_PID(pmt_stream_info_offset));
-				global_state->payload_added = 1;
+			break;
+		case 0x06:	/* AC-3 (only if wanted *) */
+			if ( global_state->want_ac3 ) {
+				stream_type_name = "AC-3";
 				global_state->stream_type = AUDIO_MODE_AC3;
-				global_state->mime_type = mime_type(global_state->stream_type);
+				audio_all_checks = CHECK_DESCRIPTOR;
+			}
+			break; 
+		default:
+			return;
+			break;
+	}
+	/* We found a supported media stream */
+	/* Scan descriptors */
+	{
+		unsigned int offset = 0;
+#ifdef DEBUG
+		fprintf(stderr, "Searching PMT descriptors: Length of descriptors %d\n", PMT_INFO_LENGTH(pmt_stream_info_offset));
+#endif
+		while (offset < PMT_INFO_LENGTH(pmt_stream_info_offset)) {
+			unsigned char * descriptor_pointer = PMT_FIRST_STREAM_DESCRIPTORP(pmt_stream_info_offset) + offset;
+			offset = offset + DESCRIPTOR_LENGTH (descriptor_pointer) + 2; /* The 2 is the static size of the offset and the tag byte itself */
+#ifdef DEBUG
+			fprintf(stderr, "Searching PMT descriptors, current type 0x%x: next descriptor @%d\n", DESCRIPTOR_TAG(descriptor_pointer), offset);
+#endif
+			/* Maximum Bitrate descriptor, found description in wireshark and on the internet */
+			if ( DESCRIPTOR_TAG(descriptor_pointer) == 0x0e ) {
+				int bitrate;
+				bitrate = ((descriptor_pointer[2] & 0x3f)<<16) + (descriptor_pointer[3]<<8) + descriptor_pointer[4];
+				bitrate = bitrate * 50;
+				global_state->br = bitrate / 1024;
+				output_logmessage("add_payload_from_pmt(): %s maximum bitrate %.1f kB/s\n", stream_type_name, (float)bitrate/1024);
+			}
+			/* AC-3 Descriptor */
+			if ( global_state->want_ac3 && DESCRIPTOR_TAG(descriptor_pointer) == 0x6a ) {
+				output_logmessage("add_payload_from_pmt(): Found AC-3 audio descriptor for PID %d\n", PMT_PID(pmt_stream_info_offset));
+				if ( audio_all_checks == CHECK_DESCRIPTOR && global_state->stream_type == AUDIO_MODE_AC3) {
+					audio_all_checks = AUDIO_STREAM;
+				}
+				/* TODO parse AC-3 parameters out of fields */
+			}
+			if ( DESCRIPTOR_TAG(descriptor_pointer) == 0x0a ) {
+				unsigned char language[4];
+				memcpy(language, descriptor_pointer + 2, 3);
+				language[3] = 0;
+				output_logmessage("add_payload_from_pmt(): stream language `%s'\n", language);
+				/* TODO */
 			}
 		}
+	}
+	/* If all parameters are ok, add the payload stream */
+	if ( audio_all_checks == AUDIO_STREAM ) {
+		global_state->service_id = PMT_PROGRAM_NUMBER(start);
+		global_state->mime_type = mime_type(global_state->stream_type);
+		global_state->payload_added = 1;
+		output_logmessage("add_payload_from_pmt(): Found %s audio stream in PID %d (service_id %d)\n", stream_type_name, PMT_PID(pmt_stream_info_offset), global_state->service_id);
+		add_channel(CHANNEL_TYPE_PAYLOAD, PMT_PID(pmt_stream_info_offset));
 	}
 	return;
 }
 
 
 /* Get stream info out of the PMT (program map table). We are only interested in radio mp1/mp2/aac streams or
- * alternativly for AC-3 (not done yet). */
+ * alternativly for AC-3. */
 
 static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes ) {
 	unsigned char* start = NULL;
@@ -579,6 +594,14 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 #endif
 #endif
 					} else {
+						if ( SDT_DESCRIPTOR_SERVICE_ID(description_offset) != global_state->service_id ) {
+#ifdef DEBUG
+							fprintf(stderr, "SDT: SDT skipping service %d, because not matching for wanted sevice_id %d\n", 
+								SDT_DESCRIPTOR_SERVICE_ID(description_offset), global_state->service_id );
+#endif
+							description_offset = description_offset + SDT_DESCRIPTOR_LOOP_LENGTH(description_offset) + 5;
+							continue;
+						}
 						if (SDT_DESCRIPTOR_RUNNING(description_offset) == 0x4 ||
 							SDT_DESCRIPTOR_RUNNING(description_offset) == 0x1 /* FRENCH transponder?! */ ) {
 							unsigned char* description_content = SDT_DESCRIPTOR_CONTENT(description_offset);
@@ -599,8 +622,7 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 							/* Service 0x02, 0x0A, 0x07: (Digital) Radio */
 							if (SDT_DC_SERVICE_TYPE(description_content) == 0x2
 								|| SDT_DC_SERVICE_TYPE(description_content) == 0x0a
-								|| SDT_DC_SERVICE_TYPE(description_content) == 0x07 
-								|| SDT_DC_SERVICE_TYPE(description_content) == 0x01 /* Also CSAT transponder 12285 V: radio stations are marked as SD-TV */ ) {
+								|| SDT_DC_SERVICE_TYPE(description_content) == 0x07 ) {
 								/* Sometime we get garbage only store if we have a service_name with length > 0 */
 								if (strlen(service_name) > 0) {
 									/* service name is latin1 in most cases */
@@ -771,7 +793,7 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 					} else if ( text_charset == CHARSET_UTF8 ) {
 						output_logmessage("EIT: Current transmission `%s'\n", short_description); 
 					} else {
-						output_logmessage("EIT: Current transmission (MPEG-Charset: 0x%x, output likely garbaled)`%s'\n", utf8((unsigned char*)short_description, utf8_message));
+						output_logmessage("EIT: Current transmission (MPEG-Charset: 0x%x, output likely garbaled) `%s'\n", text_charset, utf8((unsigned char*)short_description, utf8_message));
 					}
 				}
 			} else {

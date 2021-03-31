@@ -2,7 +2,7 @@
 
    Copyright (C) Nicholas Humfrey 2006, Dave Chapman 2002
    reworked to be ts2shout.h
-   (C) Carsten Gross <carsten@siski.de> 2018
+   (C) Carsten Gross <carsten@siski.de> 2018-2021
 
 
    This program is free software; you can redistribute it and/or
