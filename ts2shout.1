@@ -1,4 +1,4 @@
-.TH TS2SHOUT 1L "17.03.2019" "User Commands" "Linux Users's Manual"
+.TH TS2SHOUT 1L "2021-04-01" "User Commands" "Linux Users's Manual"
 .SH NAME
 .B ts2shout - Convert a MPEG transport stream to shoutcast, plain mpeg or AC-3 audio
 .SH SYNOPSIS
@@ -70,8 +70,10 @@ A cache file \fB /var/tmp/ts2shout.cache \fR is created and used. It caches nece
 
 .SH BUGS
 The whole mpeg transport handling stuff is kept "as minimal as possible" to
-keep the application small and understandable. Detection of AC-3 stream
-parameters is done in a very lightwight way.
+keep the application small and understandable. MPEG and shoutcast charset encoding is "best effort". If MPEG uses
+latin1 or something else of the older encodings shoutcast will be latin1 and logging in syslog is converted to utf-8 (leading to wrong characters e.g. for
+cyrillic or eastern european languages). If MPEG uses utf-8 charset (e.g. IRIB radio stations on Hotbird 13E transponder 10775H) utf-8 will be used
+for shoutcast, leading to quite good results on LMS.
  
 .SH "SEE ALSO"
 .BR apache2 (1), tvheadend (1), mpg123 (1), curl (1)
