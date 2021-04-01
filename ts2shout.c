@@ -36,6 +36,7 @@
 #include <stdarg.h>
 #include <time.h>
 #include <curl/curl.h>
+#include <assert.h>
 
 #include "ts2shout.h"
 #include "rds.h"
@@ -263,7 +264,7 @@ static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned
 				memcpy(language, descriptor_pointer + 2, 3);
 				language[3] = 0;
 				output_logmessage("add_payload_from_pmt(): stream language `%s'\n", language);
-				/* TODO */
+				/* ger, deu, FRA, fre... oh, this is quite a mess even if you look only on german and french */
 			}
 		}
 	}
@@ -775,15 +776,19 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 			/* Replace control characters */
 			cleanup_mpeg_string(text_description);
 			if ( EIT_EVENT_RUNNING_STATUS(event_start) == 4) {
-				char tmp_title[STR_BUF_SIZE];
+				char tmp_title[STR_BUF_SIZE+1];
 #ifdef DEBUG				
 				fprintf(stderr, "EIT: RUNNING EVENT: %s (%s) in language %3.3s found.\n", short_description, text_description, EIT_DESCRIPTOR_LANG(first_description_start));
 #endif			/* Write full info into channel title, but only if there is a difference between text and short description */
 				if (text_description != NULL && strlen(text_description) > 0 ) {
-					snprintf(tmp_title, STR_BUF_SIZE - 1, "%s - %s", short_description, text_description);
+					int retval;
+					retval = snprintf(tmp_title, STR_BUF_SIZE, "%s - %s", short_description, text_description);
+					assert(retval > 0);
 				} else {
 					/* Sonst nur short description */
-					snprintf(tmp_title, STR_BUF_SIZE - 1, "%s", short_description);
+					int retval;
+					retval = snprintf(tmp_title, STR_BUF_SIZE, "%s", short_description);
+					assert(retval > 0);
 				}
 				if (0 != strcmp(tmp_title, global_state->stream_title)) {
 					// It's needed in iso8859-1 for StreamTitle, but in UTF-8 for logging
