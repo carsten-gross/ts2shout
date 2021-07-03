@@ -17,7 +17,7 @@
  *  You should have received a copy of the GNU Lesser General Public
  *  License along with this library; if not, write to the Free Software
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- *  
+ *
  */
 
 #ifndef _MPA_HEADER_H
@@ -29,6 +29,7 @@ typedef struct {
 	uint8_t sync2;
 	uint8_t sync3;
 	unsigned int syncword;
+	unsigned int profile;
 	unsigned int layer;
 	unsigned int version;
 	unsigned int error_protection;

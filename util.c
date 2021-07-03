@@ -30,6 +30,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <unistd.h>
+#include <assert.h>
 
 
 #include "ts2shout.h"
@@ -105,6 +106,40 @@ const char* mime_type(enum_stream_type stream_type) {
 	} else {
 		return "error";
 	}
+}
+
+/* Get AAC profile / for profile given in AAC profile information */
+const char* aac_profile_name(uint8_t profile_and_level) {
+	static char profile_name[101];
+	int retval;
+	profile_name[100] = 0;
+	retval = snprintf(profile_name, 100, "Unkown AAC profile (%d)", profile_and_level);
+	if ( profile_and_level < 0x10)
+		return profile_name;
+	if ( profile_and_level < 0x14)
+		retval = snprintf(profile_name, 100, "Main profile, Level %d", (profile_and_level & 0x03) + 1 );
+	if ( profile_and_level > 0x17 && profile_and_level < 0x1c)
+		retval = snprintf(profile_name, 100, "Scalable profile, Level %d", (profile_and_level & 0x03) + 1);
+	if ( profile_and_level > 0x1f && profile_and_level < 0x22)
+		retval = snprintf(profile_name, 100, "Speech profile, Level %d", (profile_and_level & 0x01) + 1);
+	if ( profile_and_level > 0x27 && profile_and_level < 0x2b)
+		retval = snprintf(profile_name, 100, "Synthesis profile, Level %d", (profile_and_level & 0x03) + 1 );
+	if ( profile_and_level > 0x2f && profile_and_level < 0x38)
+		retval = snprintf(profile_name, 100, "HQ audio profile, Level %d", (profile_and_level & 0x07) + 1);
+	if ( profile_and_level > 0x37 && profile_and_level < 0x40)
+		retval = snprintf(profile_name, 100, "Low delay audio profile, Level %d", (profile_and_level & 0x07) + 1);
+	if ( profile_and_level > 0x3f && profile_and_level < 0x44)
+		retval = snprintf(profile_name, 100, "Natural audio profile, Level %d", (profile_and_level & 0x03) + 1);
+	if ( profile_and_level > 0x47 && profile_and_level < 0x4e)
+		retval = snprintf(profile_name, 100, "Mobile audio profile, Level %d", (profile_and_level & 0x07) + 1);
+	if ( profile_and_level > 0x4f && profile_and_level < 0x54)
+		retval = snprintf(profile_name, 100, "AAC profile, Level %d", ((profile_and_level & 0x03) < 2 ? (profile_and_level & 0x03) : (profile_and_level & 0x03) + 1) + 1  );
+	if ( profile_and_level > 0x57 && profile_and_level < 0x54)
+		retval = snprintf(profile_name, 100, "HE-AAC profile, Level %d", (profile_and_level & 0x03) + 2);
+	if ( profile_and_level > 0x5f && profile_and_level < 0x64)
+		retval = snprintf(profile_name, 100, "HE-AACv2 profile, Level %d", (profile_and_level & 0x03) + 2);
+	assert(retval > 0);
+	return profile_name;
 }
 
 /* from https://stackoverflow.com/questions/4059775/convert-iso-8859-1-strings-to-utf-8-in-c-c */

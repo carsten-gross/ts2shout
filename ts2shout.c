@@ -51,6 +51,8 @@ uint8_t shoutcast=1;      /* Send shoutcast headers? */
 uint8_t	logformat=1;      /* Apache compatible output format */
 uint8_t	cgi_mode=0;       /* Are we running as CGI programme? This is set if there is QUERY_STRING set in the environment */
 
+uint64_t frame_count=0;	  /* ts-Frame number (used for debugging) */
+
 static const long int mb_conversion = 1024 * 1024;
 
 ts2shout_channel_t *channel_map[MAX_PID_COUNT];
@@ -180,6 +182,26 @@ static void extract_pat_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	return;
 }
 
+/* Let's hate software patents. This table is guessed out of real world radio DVB-S reception
+ * It's not correct, but if someone wants this fixed, please provide me a description of how
+ * the streaming parameters are read out of the LATM stream or mpeg-ts stream PMT.
+ */
+
+static void set_latm_parameters(uint8_t aac_profile) {
+	global_state->latm_magic1 = 0x56;
+	if (aac_profile == 0x51 ) {
+		global_state->sr = 48000;
+		global_state->br = 128;
+		global_state->latm_magic2 = 0xe1;
+	}
+	if (aac_profile == 0x52 ) {
+		global_state->sr = 48000;
+		global_state->br = 256;
+		global_state->latm_magic2 = 0xe2;
+	}
+	return;
+}
+
 /* Get info about an available media stream (we want mp1/mp2/mp4 or AC-3) */
 
 static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned char *start) {
@@ -248,8 +270,8 @@ static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned
 				int bitrate;
 				bitrate = ((descriptor_pointer[2] & 0x3f)<<16) + (descriptor_pointer[3]<<8) + descriptor_pointer[4];
 				bitrate = bitrate * 50;
-				global_state->br = (bitrate * 8 ) / 1024;
-				output_logmessage("add_payload_from_pmt(): %s maximum bitrate %.1f kByte/s (%.1f kBit/s)\n", stream_type_name, (float)bitrate/1024, ((float)bitrate/1024) * 8);
+				global_state->br = ( bitrate * 8 ) / 1024;
+				output_logmessage("add_payload_from_pmt(): %s maximum bitrate %.1f KByte/s (%.1f KBit/s)\n", stream_type_name, (float)bitrate/1024, ((float)bitrate * 8) /1024);
 			}
 			/* AC-3 Descriptor */
 			if ( global_state->want_ac3 && DESCRIPTOR_TAG(descriptor_pointer) == 0x6a ) {
@@ -258,6 +280,13 @@ static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned
 					audio_all_checks = AUDIO_STREAM;
 				}
 				/* TODO parse AC-3 parameters out of fields */
+			}
+			/* AAC descriptor */
+			if ( DESCRIPTOR_TAG(descriptor_pointer) == 0x7c ) {
+				uint8_t aac_profile;
+				aac_profile = descriptor_pointer[2];
+				set_latm_parameters(aac_profile);
+				output_logmessage("add_payload_from_pmt(): Audio `%s'\n", aac_profile_name(aac_profile));
 			}
 			if ( DESCRIPTOR_TAG(descriptor_pointer) == 0x0a ) {
 				unsigned char language[4];
@@ -843,6 +872,8 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 		while (!chan->synced && es_len>= 6) {
 			// Valid header?
 			// MPEG1/2
+			// fprintf(stderr, "Searching for stream start, Offset %d, Pointer %d, Bytes 0x%x, 0x%x\n", es_len, es_ptr, es_ptr[0], es_ptr[1]); 
+
 			if (chan->pes_stream_id >= 0xc0) {
 				if (mpa_header_parse(es_ptr, &chan->mpah)) {
 					// Now we know bitrate etc, set things up
@@ -1273,7 +1304,11 @@ int16_t process_ts_packet( unsigned char * buf )
 	unsigned int pid=0;
 	size_t pes_len;
 	int32_t streamed = 0;
-
+	
+	frame_count += 1 ;
+/* DEBUG possibility
+	fprintf(stderr, "ts-frame number #%d\n", frame_count); 
+*/
 	// Get the PID of this TS packet
 	pid = TS_PACKET_PID(buf);
 		

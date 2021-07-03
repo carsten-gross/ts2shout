@@ -246,6 +246,8 @@ typedef struct programm_info_s {
 	char old_stream_title[STR_BUF_SIZE]; /* Old StreamTitle, that was given in last session */
 	uint32_t br;						/* Bitrate of stream e.g. 320000 kBit/s			*/
 	uint32_t sr;						/* Streamrate of stream e.g. 48 kHz == 48000 Hz */
+	uint8_t  latm_magic1;				/* LATM-Magic Byte 1 */
+	uint8_t	 latm_magic2;				/* LATM-Magic Byte 2 */
 	uint64_t bytes_streamed_read;		/* Total bytes read from stream */
 	uint64_t bytes_streamed_write;		/* Total bytes write to stdout/streamed to application/CGI */
 	uint16_t ts_sync_error;				/* Total global number of sync errors */
@@ -299,6 +301,9 @@ int add_channel(enum_channel_type channel_type, int pid);
 const char* channel_name(enum_channel_type channel_type); 
 /* Get mime/type of stream output */
 const char* mime_type(enum_stream_type stream_type); 
+/* Get AAC profile */
+const char* aac_profile_name(uint8_t profile_and_level);
+
 unsigned char *utf8(unsigned char* in, unsigned char* out); 
 
 void add_cache(programm_info_t* global_state); 

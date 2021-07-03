@@ -33,6 +33,7 @@
 
 #include "ts2shout.h"
 #include "mpa_header.h"
+#include "rds.h"
 
 extern programm_info_t *global_state;
 
@@ -83,11 +84,14 @@ static const unsigned int mp2_samplerate[4][4] =
 /* See https://github.com/mvaneerde/blog/blob/master/scripts/adtsaudioheader.pl */
 
 static const unsigned aac_samplerate[] = {
-	96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 0, 0, 0, 0 };
+	96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350, 0, 0, 0 };
 
 static const char * aac_channel_name[] = {
 	"Unknown", "C (1/0)", "L/R (2/0)", "L/C/R (3/0)", "L/C/R/S (4/0)",
 	"L/C/R/LS/RS (5/0)" , "L/C/R/LS/RS/LFE (5/1)", "L/C/R/LS/RS/LF/RF/LFE (7/1)"};
+
+// static const char * aac_sub_profile_name[] = {
+// 	"Main", "Low complexity", "scaleable sampling rate", "reserved" };
 
 /* new definitions for AC3
  * from http://stnsoft.com/DVD/ac3hdr.html */
@@ -113,7 +117,7 @@ static const char *ac3_channel_name[] = {
 
 /* We use the advantage that we already know wether we get
  * AAC or MPEG. We know this from the PMT */
-static void parse_header(mpa_header_t *mh, u_int32_t header)
+static void parse_header(const unsigned char* buf, mpa_header_t *mh, u_int32_t header)
 {
 	mh->syncword = (header >> 20) & 0x0fff;
 	/* This is for the RDS scan, makes detection of frame header more robust */
@@ -125,12 +129,6 @@ static void parse_header(mpa_header_t *mh, u_int32_t header)
 	/* I changed to map it directly to ease AAC/MPEG handling */
 	mh->version = (header >> 18) & 0x03;
 	mh->layer = (header >> 17) & 0x03;	
-#ifdef DEBUG
-	fprintf(stderr, "--------------------------------- parse_header ----------------------------\n");
-	DumpHex((unsigned char*)mh, 4);
-	fprintf(stderr, "Version: %d\n", mh->version);
-	 fprintf(stderr, "Layer: %d\n", mh->layer);
-#endif
 	/* The stream type is set via the flags from the PMT */
 	if (global_state->stream_type == AUDIO_MODE_AAC) {
 		if (mh->version == 0 && mh->layer == 0) {
@@ -144,19 +142,27 @@ static void parse_header(mpa_header_t *mh, u_int32_t header)
 			global_state->br = mh->bitrate;
 		}
 	} else if ( global_state->stream_type == AUDIO_MODE_AACP) {
-		/* TODO NOT IMPLEMENTED YET */
+		/* TODO UGLY AS HELL */
 		/* AAC / HE-AAC / COMPLEX / LATM/LOAS */
-		/* This code is not correct. Has to be fixed */
-		mh->samplerate_index = (header>>12) & 0x0f;
-		mh->samplerate		= aac_samplerate[mh->samplerate_index];
-		mh->channel_acmod	= (header>>6) & 0x7;
-		/* TODO Oergs.. we have to set something until we implement fetching bitrate for AAC */
-		mh->bitrate = 16;
-		global_state->sr = mh->samplerate;
-		/* If Bitrate is coming from DVB information (PMT) use it from there */
-		if (global_state->br == 0 ) {
-			global_state->br = mh->bitrate;
-		}
+		/* AAC LATM is protected with a huge amount of software patents.
+		 * Transport in mp2t is without ADTS header. In theory the parameters are
+		 * transported in PMT, but it's not documented. Therefore we match on
+		 * mp4 / aac raw frame-beginnings and reverse engineer the
+		 * parameters in PMT AAC descriptor 0x7c */
+		uint8_t bitmask = 0xfc;
+		if (buf[0] == global_state->latm_magic1 && ((buf[1] & bitmask) == (global_state->latm_magic2 & bitmask) ) ) {
+			// unsigned int profile = 0;
+#ifdef DEBUG
+			fprintf(stderr, "---------------------- HE-ACC found valid syncword ----------------------------\n");
+			DumpHex((unsigned char*)buf, 4);
+#endif	
+			/* LATM gives SR and BR in meta info, not in stream itself */
+			mh->samplerate = global_state->sr;
+			/* If Bitrate is coming from DVB information (PMT) use it from there */
+			if (global_state->br == 0 ) {
+				global_state->br = mh->bitrate;
+			}
+		 }
 	} else 	if (global_state->stream_type == AUDIO_MODE_MPEG) {
 		if (mh->version != 0 && mh->layer != 0) {
 			mh->error_protection = ((header >> 16) & 0x01) ? 0 : 1;
@@ -215,6 +221,10 @@ void mpa_header_print( mpa_header_t *mh )
 		if (mh->version == 0 && mh->layer == 0) {
 			output_logmessage("Synced to AAC, Samplerate %d Hz, Configuration: %s\n", mh->samplerate, aac_channel_name[mh->channel_acmod]);
 		}
+	} else if ( global_state->stream_type == AUDIO_MODE_AACP ) {
+		if ( mh->layer == 0 ) {
+			output_logmessage("Synced to HE-AAC\n");
+		}
 	}
 }
 
@@ -228,9 +238,9 @@ void ac3_header_print (mpa_header_t *mh)
 int mpa_header_parse( const unsigned char* buf, mpa_header_t *mh)
 {
 	u_int32_t head;
-		
+
 	/* Quick check */
-	if (buf[0] != 0xFF)
+	if (global_state->stream_type != AUDIO_MODE_AACP && buf[0] != 0xFF)
 		return 0;
 
 	/* Put the first four bytes into an integer */
@@ -241,29 +251,37 @@ int mpa_header_parse( const unsigned char* buf, mpa_header_t *mh)
 
 
 	/* fill out the header struct */
-	parse_header(mh, head);
-
-	/* check for syncword */
-	if ((mh->syncword & 0x0ffe) != 0x0ffe)
-		return 0;
-
-	/* make sure layer is sane */
-	if (mh->layer == 0 && mh->version != 0)
-		return 0;
-
-	/* make sure version is sane */
-	if (mh->version == 0 && mh->layer != 0)
-		return 0;
-
-	/* make sure bitrate is sane */
-	if (mh->bitrate == 0)
-		return 0;
-
-	/* make sure samplerate is sane */
-	if (mh->samplerate == 0)
-		return 0;
-
-	return 1;
+	parse_header(buf, mh, head);
+	/* Sanity checks for MPEG1/2 */
+	if (global_state->stream_type == AUDIO_MODE_MPEG) {
+		/* check for syncword */
+		if ((mh->syncword & 0x0ffe) != 0x0ffe)
+			return 0;
+		/* make sure layer is sane */
+		if (mh->layer == 0 && mh->version != 0)
+			return 0;
+		/* make sure version is sane */
+		if (mh->version == 0 && mh->layer != 0)
+			return 0;
+		/* make sure bitrate is sane */
+		if (mh->bitrate == 0)
+			return 0;
+		/* make sure samplerate is sane */
+		if (mh->samplerate == 0)
+			return 0;
+		return 1;
+	} else {
+#ifdef DEBUG
+			DumpHex((unsigned char*)buf, 4);
+#endif
+		if (global_state->stream_type != AUDIO_MODE_AACP && (mh->syncword & 0x0fff) != 0xfff)
+			return 0;
+		if (mh->layer > 0)
+			return 0;
+		if (mh->samplerate == 0)
+			return 0;
+		return 1;
+	}
 }
 
 // Parse AC-3 Audio header
