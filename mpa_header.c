@@ -223,7 +223,7 @@ void mpa_header_print( mpa_header_t *mh )
 		}
 	} else if ( global_state->stream_type == AUDIO_MODE_AACP ) {
 		if ( mh->layer == 0 ) {
-			output_logmessage("Synced to HE-AAC\n");
+			output_logmessage("Synced to HE-AAC, Guessed Samplerate %d Hz, Bitrate %d kBit/s\n", global_state->sr, global_state->br);
 		}
 	}
 }

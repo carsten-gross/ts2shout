@@ -193,11 +193,23 @@ static void set_latm_parameters(uint8_t aac_profile) {
 		global_state->sr = 48000;
 		global_state->br = 128;
 		global_state->latm_magic2 = 0xe1;
-	}
-	if (aac_profile == 0x52 ) {
+	} else if (aac_profile == 0x52 ) {
 		global_state->sr = 48000;
 		global_state->br = 256;
 		global_state->latm_magic2 = 0xe2;
+	} else if (aac_profile == 0x60 ) {
+		global_state->sr = 48000;
+		if (global_state->br == 0) {
+			global_state->br = 48;
+		}
+		global_state->latm_magic2 = 0xe1;
+	} else {
+		global_state->sr = 48000;
+		if (global_state->br == 0) {
+			global_state->br = 128;
+		}
+		global_state->latm_magic2 = 0xe1;
+		output_logmessage("Sorry, no configuration for AAC profile (id=0x%x) found. All values guessed.\n");
 	}
 	return;
 }
@@ -246,6 +258,8 @@ static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned
 				stream_type_name = "AC-3";
 				global_state->stream_type = AUDIO_MODE_AC3;
 				audio_all_checks = CHECK_DESCRIPTOR;
+			} else {
+				return;
 			}
 			break; 
 		default:
