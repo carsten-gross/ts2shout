@@ -18,17 +18,17 @@ endif
 
 ts2shout: ts2shout.o mpa_header.o util.o pes.o crc32.o rds.o
 	${CC} ${DEBUG} ${LDFLAGS} -o ts2shout ts2shout.o rds.o mpa_header.o util.o pes.o crc32.o -lcurl
-ts2shout.o: ts2shout.c ts2shout.h
+ts2shout.o: ts2shout.c ts2shout.h rds.h mpa_header.h
 	${CC} ${DEBUG} -DCURRENT_VERSION="${CURRENT_VERSION}" -DCURRENT_DATE="${CURRENT_DATE}" ${CFLAGS} -c ts2shout.c
-mpa_header.o: mpa_header.c mpa_header.h
+mpa_header.o: mpa_header.c mpa_header.h ts2shout.h
 	${CC} ${DEBUG} ${CFLAGS} -c mpa_header.c
-pes.o: pes.c 
+pes.o: pes.c ts2shout.h
 	${CC} ${DEBUG} ${CFLAGS} -c pes.c
-util.o: util.c
+util.o: util.c ts2shout.h
 	${CC} ${DEBUG} ${CFLAGS} -c util.c
 crc32.o: crc32.c
 	${CC} ${DEBUG} ${CFLAGS} -c crc32.c
-rds.o: rds.c
+rds.o: rds.c rds.h ts2shout.h
 	${CC} ${DEBUG} ${CFLAGS} -c rds.c
 
 clean:
