@@ -155,7 +155,10 @@ static void parse_header(const unsigned char* buf, mpa_header_t *mh, u_int32_t h
 #ifdef DEBUG
 			fprintf(stderr, "---------------------- HE-ACC found valid syncword ----------------------------\n");
 			DumpHex((unsigned char*)buf, 4);
-#endif	
+#endif
+			/* No layer and version info */
+			mh->layer = 0;
+			mh->version = 0;
 			/* LATM gives SR and BR in meta info, not in stream itself */
 			mh->samplerate = global_state->sr;
 			/* If Bitrate is coming from DVB information (PMT) use it from there */
