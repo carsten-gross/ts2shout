@@ -862,23 +862,32 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 	unsigned char* es_ptr=NULL;
 	size_t es_len=0;
 
-	int32_t bytes_written = 0; 	
+	int32_t bytes_written = 0;
+	// static uint32_t pes_framesize = 0; 
 
-	// Start of a PES header?
+	/* Start of audio block / PES? */
 	if ( start_of_pes ) {
-		// Parse the PES header
+		/* Parse and remove PES header */
 		es_ptr = parse_pes( pes_ptr, pes_len, &es_len, chan );
+#if 0
+		fprintf(stderr, "extract_pes_payload new frame: Frame#%lu, chan->pes_remaining = %ld\n", frame_count, chan->pes_remaining);
+#endif
+
 	} else if (chan->pes_stream_id) {
 		// Don't output any data until we have seen a PES header
 		es_ptr = pes_ptr;
 		es_len = pes_len;
 		// Are we are the end of the PES packet?
 		if (es_len>chan->pes_remaining) {
+			output_logmessage("extract_pes_payload: Frame#%lu chan->pes_remaining (%ld) < es_len (%d)!\n", frame_count, chan->pes_remaining, es_len);
 			es_len=chan->pes_remaining;
 		}
 	}
 	// Subtract the amount remaining in current PES packet
 	chan->pes_remaining -= es_len;
+#if 0 
+		fprintf(stderr, "extract_pes_payload after substraction of current frame: Frame#%lu, chan->pes_remaining = %ld\n", frame_count, chan->pes_remaining);
+#endif
 	// Got some data to write out?
 	if (es_ptr) {
 		// Scan through Elementary Stream (ES)
@@ -1354,6 +1363,9 @@ int16_t process_ts_packet( unsigned char * buf )
 		return TS_SOFT_ERROR;
 	} else if (TS_PACKET_ADAPTATION(buf)==0x3) {
 		// Adaptation field AND payload
+#ifdef DEBUG
+		output_logmessage("process_ts_packet: Adaption field with length %d found in frame #%d\n", TS_PACKET_ADAPT_LEN(buf), frame_count);
+#endif 
 		pes_ptr += (TS_PACKET_ADAPT_LEN(buf) + 1);
 		pes_len -= (TS_PACKET_ADAPT_LEN(buf) + 1);
 	}

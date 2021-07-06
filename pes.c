@@ -84,10 +84,12 @@ unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, ts
 	}
 	
 	// Store the length of the PES packet payload
-	chan->pes_remaining = pes_len - (2+pes_header_len);
+	// Original code 
+	// chan->pes_remaining = pes_len - (2 + pes_header_len);
+	chan->pes_remaining = pes_len - (3 + pes_header_len);
 
 	// Return pointer and length of payload in this TS packet
-	*payload_size = size-(9+pes_header_len);
+	*payload_size = size - (9 + pes_header_len);
 	return buf+(9+pes_header_len);
 }
 
