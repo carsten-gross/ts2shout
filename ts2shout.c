@@ -219,10 +219,12 @@ static void set_latm_parameters(uint8_t aac_profile) {
 static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned char *start) {
 	unsigned int stream_type;
 	char *stream_type_name = "";
+	static uint8_t rds_stream_found = 0;
 	enum {
 		NO_AUDIO_STREAM,
 		CHECK_DESCRIPTOR,
-		AUDIO_STREAM } audio_all_checks = NO_AUDIO_STREAM; /* Local use only: 0 = no audio found, 1 = unsufficent descriptor data, 2 = OK */
+		AUDIO_STREAM,
+		RDS_STREAM } audio_all_checks = NO_AUDIO_STREAM; /* Local use only: 0 = no audio found, 1 = unsufficent descriptor data, 2 = Audio OK, 3 = RDS  */
 	stream_type = PMT_STREAM_TYPE(pmt_stream_info_offset);
 	switch ( stream_type ) {
 		case 0x03:	/* MPEG 1 audio */
@@ -239,6 +241,15 @@ static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned
 				audio_all_checks = AUDIO_STREAM;
 			}
 			break;
+		case 0x06:	/* AC-3 (only if wanted *) */
+			if ( global_state->want_ac3 ) {
+				stream_type_name = "AC-3";
+				global_state->stream_type = AUDIO_MODE_AC3;
+				audio_all_checks = CHECK_DESCRIPTOR;
+			} else {
+				return;
+			}
+			break;
 		case 0x0f:	/* MPEG 2 AAC */
 			if (! global_state->want_ac3 ) {
 				stream_type_name = "AAC";
@@ -253,20 +264,15 @@ static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned
 				audio_all_checks = AUDIO_STREAM;
 			}
 			break;
-		case 0x06:	/* AC-3 (only if wanted *) */
-			if ( global_state->want_ac3 ) {
-				stream_type_name = "AC-3";
-				global_state->stream_type = AUDIO_MODE_AC3;
-				audio_all_checks = CHECK_DESCRIPTOR;
-			} else {
-				return;
-			}
-			break; 
+		case 0x89:	/* If MPEG 2/4 AAC (LATM) RDS data is in a separate PID */
+			stream_type_name = "RDS";
+			audio_all_checks = RDS_STREAM;
+			break;
 		default:
 			return;
 			break;
 	}
-	/* We found a supported media stream */
+	/* We found a supported media or data stream */
 	/* Scan descriptors */
 	{
 		unsigned int offset = 0;
@@ -313,11 +319,23 @@ static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned
 	}
 	/* If all parameters are ok, add the payload stream */
 	if ( audio_all_checks == AUDIO_STREAM ) {
+		/* Only add 1 audio payload */
+		if (global_state->payload_added == 0) {
+			global_state->service_id = PMT_PROGRAM_NUMBER(start);
+			global_state->mime_type = mime_type(global_state->stream_type);
+			global_state->payload_added = 1;
+			output_logmessage("add_payload_from_pmt(): Found %s audio stream in PID %d (service_id %d)\n", stream_type_name, PMT_PID(pmt_stream_info_offset), global_state->service_id);
+			add_channel(CHANNEL_TYPE_PAYLOAD, PMT_PID(pmt_stream_info_offset));
+		}
+	} else if ( audio_all_checks == RDS_STREAM && rds_stream_found == 0) {
 		global_state->service_id = PMT_PROGRAM_NUMBER(start);
-		global_state->mime_type = mime_type(global_state->stream_type);
-		global_state->payload_added = 1;
-		output_logmessage("add_payload_from_pmt(): Found %s audio stream in PID %d (service_id %d)\n", stream_type_name, PMT_PID(pmt_stream_info_offset), global_state->service_id);
-		add_channel(CHANNEL_TYPE_PAYLOAD, PMT_PID(pmt_stream_info_offset));
+		if ( global_state->prefer_rds > 0) {
+			output_logmessage("add_payload_from_pmt(): Found RDS data stream in PID %d\n", PMT_PID(pmt_stream_info_offset));
+			add_channel(CHANNEL_TYPE_RDS, PMT_PID(pmt_stream_info_offset));
+		} else {
+			output_logmessage("add_payload_from_pmt(): Ignoring RDS data stream in PID %d, RDS disabled by configuration\n", PMT_PID(pmt_stream_info_offset));
+		}
+		rds_stream_found = 1;
 	}
 	return;
 }
@@ -353,11 +371,12 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 		if (PMT_SECTION_NUMBER(start) == 0 && PMT_LAST_SECTION_NUMBER(start) == 0) {
 			unsigned char* pmt_stream_info_offset = PMT_DESCRIPTOR(start);
 			/* Search for stream description */
-			while ((pmt_stream_info_offset != NULL) && found_streams_counter < 3) {
+			while ((pmt_stream_info_offset != NULL) && found_streams_counter < 6) {
 				if (! channel_map[PMT_PID(pmt_stream_info_offset)]) {
 		            /* right transport_id? */
 					add_payload_from_pmt(pmt_stream_info_offset, start);
 					found_streams_counter += 1;
+#if 0 
 					if (global_state->payload_added > 0) {
 						pmt_stream_info_offset = NULL;
 						global_state->service_id = PMT_PROGRAM_NUMBER(start);
@@ -368,6 +387,7 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 						fprintf(stderr, "PMT: Found other stream with PID %d, stream type %d\n", PMT_PID(pmt_stream_info_offset), PMT_STREAM_TYPE(pmt_stream_info_offset));
 #endif
 					}
+#endif 
 				} else {
 					/* check next */
 					pmt_stream_info_offset = PMT_FIRST_STREAM_DESCRIPTORP(pmt_stream_info_offset) + PMT_INFO_LENGTH(pmt_stream_info_offset);
@@ -856,6 +876,22 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	return;
 }
 
+static void extract_rds_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes )
+{
+	unsigned char* es_ptr=NULL;
+	size_t es_len=0;
+	if ( start_of_pes ) {
+		/* Parse and remove PES header */
+		es_ptr = parse_pes( pes_ptr, pes_len, &es_len, chan );
+	}
+	if ((es_len - 2) > 0) {
+		rds_handle_message(es_ptr + 1, es_len - 2);
+	}
+	return;
+}
+
+
+
 
 int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes )
 {
@@ -880,6 +916,8 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 		// Are we are the end of the PES packet?
 		if (es_len>chan->pes_remaining) {
 			output_logmessage("extract_pes_payload: Frame#%lu chan->pes_remaining (%ld) < es_len (%d)!\n", frame_count, chan->pes_remaining, es_len);
+			// fprintf(stderr, "This Data is garbage: \n");
+			// DumpHex(pes_ptr, es_len);
 			es_len=chan->pes_remaining;
 		}
 	}
@@ -1329,6 +1367,14 @@ int16_t process_ts_packet( unsigned char * buf )
 	int32_t streamed = 0;
 	
 	frame_count += 1 ;
+
+	/* If we just only receive packets and have output of payload
+	   (because no audio in stream or whatver) */
+	if (cgi_mode && ( ! global_state->output_payload )
+		&& frame_count > 2000) {
+		output_logmessage("Received more then 320 kByte of data and payload output not started. bailing out\n");
+		return TS_HARD_ERROR;
+	}
 /* DEBUG possibility
 	fprintf(stderr, "ts-frame number #%d\n", frame_count); 
 */
@@ -1388,6 +1434,9 @@ int16_t process_ts_packet( unsigned char * buf )
 				break;
 			case CHANNEL_TYPE_PMT:
 				extract_pmt_payload ( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
+				break;
+			case CHANNEL_TYPE_RDS:
+				extract_rds_payload ( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
 				break;
 			case CHANNEL_TYPE_PAYLOAD:
 				streamed = extract_pes_payload( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );

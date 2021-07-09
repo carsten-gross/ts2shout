@@ -29,7 +29,6 @@
  *  
  */
 
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -233,10 +232,14 @@ void handle_rt(uint8_t* rds_message, uint8_t size) {
 }
 	
 /* Handle a RDS data chunk. */
-void handle_message(uint8_t* rds_message, uint8_t size) {
+void rds_handle_message(uint8_t* rds_message, uint8_t size) {
 	uint8_t type = rds_message[4];
 	if (! check_message(rds_message, size))  
 		return;
+#ifdef DEBUG
+	fprintf(stderr, "--- NEW RDS ---\n");
+	DumpHex(rds_message, size);
+#endif
 	switch (type) {
 		case 0x0a: // RT (Radiotexta)
 			handle_rt(rds_message, size); 
@@ -303,7 +306,7 @@ void rds_decode_oneframe(uint8_t* buffer, int offset) {
 		if (mychar == 0xfe) {
 			current_pos = 0; 
 		} else if (mychar == 0xff) {
-			handle_message(rds_message, current_pos); 
+			rds_handle_message(rds_message, current_pos);
 			current_pos = 0; 
 		} else if (mychar == 0xfd) {
 			// special marker: 0xfd 0x01 means 0xfe, 0xfd 0x02 means 0xff 

@@ -50,7 +50,9 @@ unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, ts
 	// Stream ID 0xbd was seen for AC3 audio
 	if( stream_id != chan->pes_stream_id )
 	{
-		if (stream_id != 0xbd 
+		if (stream_id == 0x89 ) {
+			// RDS-PES-Stream
+		} else if (stream_id != 0xbd
 			&& ( stream_id < 0xC0 || stream_id > 0xDF )  ) {
 			output_logmessage("Ignoring non-mpegaudio stream ID 0x%x (pid: %d).\n", stream_id, chan->pid);
 			return 0;
@@ -62,7 +64,6 @@ unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, ts
 			output_logmessage("Ignoring additional audio stream ID 0x%x (pid: %d).\n", stream_id, chan->pid);
 			return 0;
 		}
-	
 	}
 	// Check PES Extension header 
 	if( PES_PACKET_SYNC_CODE(buf) != 0x2 )
@@ -92,5 +93,4 @@ unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, ts
 	*payload_size = size - (9 + pes_header_len);
 	return buf+(9+pes_header_len);
 }
-
 
