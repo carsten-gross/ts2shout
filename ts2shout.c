@@ -1529,7 +1529,7 @@ int16_t process_ts_packet( unsigned char * buf )
 	/* If we just only receive packets and have output of payload
 	   (because no audio in stream or whatver) */
 	if (cgi_mode && ( ! global_state->output_payload )
-		&& frame_count > 2000) {
+		&& frame_count > 3000) {
 		output_logmessage("Received more then 320 kByte of data and payload output not started. bailing out\n");
 		return TS_HARD_ERROR;
 	}
