@@ -319,6 +319,10 @@ void rds_decode_oneframe(uint8_t* buffer, int offset) {
 		}
 		k ++; 
 	}
+#ifdef DEBUG
+	fprintf(stderr, "Added RDS Data from PES data\n");
+	DumpHex(rds_message, current_pos);
+#endif
 	return;
 }
 

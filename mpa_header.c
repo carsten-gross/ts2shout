@@ -130,7 +130,7 @@ static void parse_header(const unsigned char* buf, mpa_header_t *mh, u_int32_t h
 	mh->version = (header >> 18) & 0x03;
 	mh->layer = (header >> 17) & 0x03;	
 	/* The stream type is set via the flags from the PMT */
-	if (global_state->stream_type == AUDIO_MODE_AAC) {
+	if (global_state->stream_type == STREAM_MODE_AAC) {
 		if (mh->version == 0 && mh->layer == 0) {
 			/* AAC / ADTS */
 			mh->samplerate_index = (header>>12) & 0x0f;
@@ -141,7 +141,7 @@ static void parse_header(const unsigned char* buf, mpa_header_t *mh, u_int32_t h
 			global_state->sr = mh->samplerate;
 			global_state->br = mh->bitrate;
 		}
-	} else if ( global_state->stream_type == AUDIO_MODE_AACP) {
+	} else if ( global_state->stream_type == STREAM_MODE_AACP) {
 		/* TODO UGLY AS HELL */
 		/* AAC / HE-AAC / COMPLEX / LATM/LOAS */
 		/* AAC LATM is protected with a huge amount of software patents.
@@ -166,7 +166,7 @@ static void parse_header(const unsigned char* buf, mpa_header_t *mh, u_int32_t h
 				global_state->br = mh->bitrate;
 			}
 		 }
-	} else 	if (global_state->stream_type == AUDIO_MODE_MPEG) {
+	} else if (global_state->stream_type == STREAM_MODE_MPEG) {
 		if (mh->version != 0 && mh->layer != 0) {
 			mh->error_protection = ((header >> 16) & 0x01) ? 0 : 1;
 			mh->bitrate_index = (header >> 12) & 0x0F;
@@ -210,7 +210,7 @@ void mpa_header_print( mpa_header_t *mh )
 {
 	char mpeg_std[20];
 	char mpeg_mode[20];
-	if (global_state->stream_type == AUDIO_MODE_MPEG) {
+	if (global_state->stream_type == STREAM_MODE_MPEG) {
 		if (mh->version==3)			sprintf(mpeg_std, "MPEG-1");
 			else if (mh->version==2)	sprintf(mpeg_std, "MPEG-2");
 			else if (mh->version==1)	sprintf(mpeg_std, "MPEG-Unknown");
@@ -220,11 +220,11 @@ void mpa_header_print( mpa_header_t *mh )
 			else if (mh->mode==MPA_MODE_DUAL)	sprintf(mpeg_mode, "Dual");
 			else if (mh->mode==MPA_MODE_MONO)	sprintf(mpeg_mode, "Mono");
 		output_logmessage("Synced to %s layer %d, %d kbps, %d Hz, %s\n", mpeg_std, mh->layer, mh->bitrate, mh->samplerate, mpeg_mode);
-	} else if ( global_state->stream_type == AUDIO_MODE_AAC ) {
+	} else if ( global_state->stream_type == STREAM_MODE_AAC ) {
 		if (mh->version == 0 && mh->layer == 0) {
 			output_logmessage("Synced to AAC, Samplerate %d Hz, Configuration: %s\n", mh->samplerate, aac_channel_name[mh->channel_acmod]);
 		}
-	} else if ( global_state->stream_type == AUDIO_MODE_AACP ) {
+	} else if ( global_state->stream_type == STREAM_MODE_AACP ) {
 		if ( mh->layer == 0 ) {
 			output_logmessage("Synced to HE-AAC, Guessed Samplerate %d Hz, Bitrate %d kBit/s\n", global_state->sr, global_state->br);
 		}
@@ -243,7 +243,7 @@ int mpa_header_parse( const unsigned char* buf, mpa_header_t *mh)
 	u_int32_t head;
 
 	/* Quick check */
-	if (global_state->stream_type != AUDIO_MODE_AACP && buf[0] != 0xFF)
+	if (global_state->stream_type != STREAM_MODE_AACP && buf[0] != 0xFF)
 		return 0;
 
 	/* Put the first four bytes into an integer */
@@ -256,7 +256,7 @@ int mpa_header_parse( const unsigned char* buf, mpa_header_t *mh)
 	/* fill out the header struct */
 	parse_header(buf, mh, head);
 	/* Sanity checks for MPEG1/2 */
-	if (global_state->stream_type == AUDIO_MODE_MPEG) {
+	if (global_state->stream_type == STREAM_MODE_MPEG) {
 		/* check for syncword */
 		if ((mh->syncword & 0x0ffe) != 0x0ffe)
 			return 0;
@@ -277,7 +277,7 @@ int mpa_header_parse( const unsigned char* buf, mpa_header_t *mh)
 #ifdef DEBUG
 			DumpHex((unsigned char*)buf, 4);
 #endif
-		if (global_state->stream_type != AUDIO_MODE_AACP && (mh->syncword & 0x0fff) != 0xfff)
+		if (global_state->stream_type != STREAM_MODE_AACP && (mh->syncword & 0x0fff) != 0xfff)
 			return 0;
 		if (mh->layer > 0)
 			return 0;

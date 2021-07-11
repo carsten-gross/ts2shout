@@ -199,17 +199,33 @@ typedef enum {
 } enum_channel_type;
 
 typedef enum {
-	AUDIO_MODE_NONE,
-	AUDIO_MODE_MPEG,	/* MPEG-1/2 .. normal format for audio */
-	AUDIO_MODE_AAC,		/* Streamtype 0x0f ...simple AAC in MPEG-2 encapsulation */
-	AUDIO_MODE_AACP,	/* Streamtype 0x11 ... HE-AAC in MPEG-4 encapsulation */
-	AUDIO_MODE_AC3 } enum_stream_type; 
+	STREAM_MODE_NONE,
+	STREAM_MODE_MPEG,   /* MPEG-1/2 .. normal format for audio */
+	STREAM_MODE_AAC,    /* Streamtype 0x0f ...simple AAC in MPEG-2 encapsulation */
+	STREAM_MODE_AACP,   /* Streamtype 0x11 ... HE-AAC in MPEG-4 encapsulation */
+	STREAM_MODE_AC3,
+	STREAM_MODE_RDS } enum_stream_type; 
 
 typedef enum {
 	CHARSET_LATIN1	= 5,
 	CHARSET_COMPLEX = 0x10,
 	CHARSET_UTF8	= 0x15
 } enum_charset; 
+
+/* An enum to select best quality audio */
+typedef enum {
+	AUDIO_PREFERENCE_LOW    = 0x100,
+	AUDIO_PREFERENCE_MEDIUM = 0x200, 
+	AUDIO_PREFERENCE_BETTER = 0x300,
+	AUDIO_PREFERENCE_BEST   = 0x400 } enum_audio_preference;
+
+typedef struct audio_quality_s {
+	enum_audio_preference audio_preference;
+	uint8_t	aac_profile;
+	unsigned char * ptr;
+	enum_stream_type stream_type;
+} audio_quality_t;
+
 
 /* Structure containing single channel */
 typedef struct ts2shout_channel_s {
