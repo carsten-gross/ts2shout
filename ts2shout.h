@@ -221,6 +221,7 @@ typedef enum {
 
 typedef struct audio_quality_s {
 	enum_audio_preference audio_preference;
+	char * stream_type_name; 
 	uint8_t	aac_profile;
 	unsigned char * ptr;
 	enum_stream_type stream_type;

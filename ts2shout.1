@@ -29,14 +29,15 @@ convert an mpeg transport stream into native mpeg audio. You have to use
 the option \fB noshout \fR then.
 .sp
 Used as a webfilter it converts from MIME type audio/mp2t to audio/mpeg, audio/aac or audio/aacp (or audio/ac3 if ac3 environment is set). 
-The to be used MIME type is autodetected using the contents of the MPEG-TS PMT section.
+The to be used MIME type is autodetected using the contents of the MPEG-TS PMT section. ts2shout doesn't do any audio format conversion, it is just 
+converted from MPEG-transport to "audio-only".
 
 .SH OPTIONS
 .B noshout	
 write a native mpeg stream, not a shoutcast media stream
 
 .B ac3		
-write the ac3 stream, not the mpeg audio.
+prefers to get the ac3 stream, not the mpeg audio.
 
 .B rds		
 if available, prefer RDS data over MPEG EIT (EPG data)
@@ -57,9 +58,7 @@ gives the number of the tvheadend channelnumber. See the example given in README
 If set to 1 the output should be done shoutcast compatible. This flag should only be set if the "Icy-MetaData: 1" header is set in the HTTP request.
 .sp
 .B AC3
-If set to 1 only an AC-3 stream is wanted. Normal mpeg audio is ignored and 
-.B not 
-delivered if this is given.
+Normally AC-3 will be selected last. If set to 1 an AC-3 stream is the most preferred output.
 .sp
 .B RDS
 If set to 1 the mpeg stream is scannend for RDS data. If found it is preferred over MPEG EIT. This is supported by DVB-S streams from germany and switzerland (NOT by austria)

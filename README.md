@@ -38,7 +38,7 @@ DVB-C, Hotbird 13E and Astra 19.2E DVB-S satellite reception.
 German and Swiss radio on DVB-S (and also DVB-C) supports RDS within the MPEG
 transport stream. The RDS data (Radio Data System, that thing from the Analog
 Radio on FM) is just inserted inside the padding bytes of the MPEG stream. If
-the stream uses AAC-LATM for audio RDS is also search in a defined private
+the stream uses AAC-LATM for audio RDS is also searched in a defined private
 stream in a separate MPEG pid. If you supply the environment variable RDS or
 the command line parameter rds it is preferred over MPEG EIT/EPG data. This is
 useful to get title and artist information in the shoutcast stream. 

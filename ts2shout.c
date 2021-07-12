@@ -228,29 +228,44 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 	stream_type = PMT_STREAM_TYPE(pmt_stream_info_offset);
 	stream_quality = malloc(sizeof(audio_quality_t));
 	memset(stream_quality, 0, sizeof(audio_quality_t));
+	/* Search for audio streams and make an assumption about preference
+	 * We want MP1/2, AAC-LATM, AAC, AC-3 (in this order)
+	 * Additional preference work is done for AAC-LATM at the end of this function */
 	switch ( stream_type ) {
 		case 0x03:	/* MPEG 1 audio */
 			audio_all_checks = AUDIO_STREAM;
-			stream_quality->stream_type = STREAM_MODE_MPEG; 
+			stream_quality->stream_type_name = "MPEG 1";
+			stream_quality->stream_type = STREAM_MODE_MPEG;
+			stream_quality->audio_preference = AUDIO_PREFERENCE_BEST;
 			break;
 		case 0x04:	/* MPEG 2 audio */
 			audio_all_checks = AUDIO_STREAM;
+			stream_quality->stream_type_name = "MPEG 2";
 			stream_quality->stream_type = STREAM_MODE_MPEG;
+			stream_quality->audio_preference = AUDIO_PREFERENCE_BEST;
 			break;
-		case 0x06:	/* AC-3 (only if wanted *) */
+		case 0x06:	/* AC-3 */
 			audio_all_checks = CHECK_DESCRIPTOR;
+			stream_quality->stream_type_name = "AC-3";
 			stream_quality->stream_type = STREAM_MODE_AC3;
+			/* If option AC3 is set, the preference is updated to "BEST" below */
+			stream_quality->audio_preference = AUDIO_PREFERENCE_LOW;
 			break;
 		case 0x0f:	/* MPEG 2 AAC */
 			audio_all_checks = AUDIO_STREAM;
-			stream_quality->stream_type = STREAM_MODE_AAC; 
+			stream_quality->stream_type_name = "AAC";
+			stream_quality->stream_type = STREAM_MODE_AAC;
+			stream_quality->audio_preference = AUDIO_PREFERENCE_MEDIUM;
 			break;
 		case 0x11:  /* MPEG 4 AAC LATM */
 			audio_all_checks = AUDIO_STREAM;
+			stream_quality->stream_type_name = "HE-AAC";
 			stream_quality->stream_type = STREAM_MODE_AACP;
+			stream_quality->audio_preference = AUDIO_PREFERENCE_BETTER;
 			break;
 		case 0x89:	/* If MPEG 2/4 AAC (LATM) RDS data is in a separate PID */
 			audio_all_checks = RDS_STREAM;
+			stream_quality->stream_type_name = "RDS";
 			stream_quality->stream_type = STREAM_MODE_NONE; 
 			break;
 		default:
@@ -260,11 +275,7 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 	}
 	/* We found a supported media or data stream */	
 	stream_quality->ptr = pmt_stream_info_offset; 
-
-
-	/* We have to scan the descriptors for AC-3, AAC and RDS informations 
-     * We want to make a decsison about the quality of a media stream, if it is audio */ 
-	/* Scan descriptors */
+	/* We have to scan the descriptors for AC-3, AAC and RDS informations */
 	uint8_t rds_ok = 0;
 	{
 		int32_t offset = 0;
@@ -322,26 +333,6 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 	if ( audio_all_checks == CHECK_DESCRIPTOR ) {
 		stream_quality->stream_type = STREAM_MODE_NONE;
 	}
-	/* Now make an assumption about preference 
-     * We want MP1/2, AAC-LATM, AAC, AC-3 (in this order) 
-     * Additional preference work is done for AAC-LATM */
-	switch (stream_quality->stream_type) {
-		case STREAM_MODE_MPEG:
-			stream_quality->audio_preference = AUDIO_PREFERENCE_BEST; 
-			break;
-		case STREAM_MODE_AACP:
-			stream_quality->audio_preference = AUDIO_PREFERENCE_BETTER;
-			break;
-		case STREAM_MODE_AAC:
-			stream_quality->audio_preference = AUDIO_PREFERENCE_MEDIUM;
-			break;
-		case STREAM_MODE_AC3:
-			stream_quality->audio_preference = AUDIO_PREFERENCE_LOW;
-			break;
-		default:
-			stream_quality->audio_preference = 0;
-			break;
-	}
 	/* If the user wants AC-3 we maximum prefer it */
 	if (global_state->want_ac3) {
 		if ( stream_quality->stream_type == STREAM_MODE_AC3) {
@@ -368,47 +359,25 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 
 /* Get info about an available media stream (we want mp1/mp2/mp4 or AC-3) */
 
-static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned char *start) {
-	unsigned int stream_type;
-	char *stream_type_name = "";
+static void add_payload_from_pmt(audio_quality_t * stream_quality, unsigned char *start) {
 	enum {
 		NO_AUDIO_STREAM,
 		CHECK_DESCRIPTOR,
 		AUDIO_STREAM,
 		RDS_STREAM } audio_all_checks = NO_AUDIO_STREAM; /* Local use only: 0 = no audio found, 1 = unsufficent descriptor data, 2 = Audio OK, 3 = RDS  */
-	stream_type = PMT_STREAM_TYPE(pmt_stream_info_offset);
-	switch ( stream_type ) {
-		case 0x03:	/* MPEG 1 audio */
-			stream_type_name = "MPEG 1";
+	switch ( stream_quality->stream_type ) {
+		case STREAM_MODE_MPEG:
+		case STREAM_MODE_AAC:
+		case STREAM_MODE_AACP:	
+		case STREAM_MODE_AC3:
 			audio_all_checks = AUDIO_STREAM;
-			global_state->stream_type = STREAM_MODE_MPEG;
+			global_state->stream_type = stream_quality->stream_type; 
 			break;
-		case 0x04:	/* MPEG 2 audio */
-			stream_type_name = "MPEG 2";
-			audio_all_checks = AUDIO_STREAM;
-			global_state->stream_type = STREAM_MODE_MPEG;
-			break;
-		case 0x06:	/* AC-3 */
-			stream_type_name = "AC-3"; /* Checks are done during quality selection, therefore it's reliable */
-			audio_all_checks = AUDIO_STREAM;
-			global_state->stream_type = STREAM_MODE_AC3;
-			break;
-		case 0x0f:	/* MPEG 2 AAC */
-			stream_type_name = "AAC";
-			audio_all_checks = AUDIO_STREAM;
-			global_state->stream_type = STREAM_MODE_AAC;
-			break;
-		case 0x11:  /* MPEG 4 AAC LATM */
-			stream_type_name = "HE-AAC";
-			audio_all_checks = AUDIO_STREAM;
-			global_state->stream_type = STREAM_MODE_AACP;
-			break;
-		case 0x89:	/* If MPEG 2/4 AAC (LATM) RDS data is in a separate PID */
-			stream_type_name = "RDS";
+		case STREAM_MODE_RDS:
 			audio_all_checks = RDS_STREAM;
 			break;
 		default:
-			output_logmessage("add_payload_from_pmt(): Programm error, no valid stream-type given (%d)\n", stream_type); 
+			output_logmessage("add_payload_from_pmt(): Programm error, no valid stream-type given (%d)\n", stream_quality->stream_type); 
 			return;
 			break;
 	}
@@ -416,10 +385,10 @@ static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned
 	{
 		unsigned int offset = 0;
 #ifdef DEBUG
-		fprintf(stderr, "Searching PMT descriptors: Length of descriptors %d\n", PMT_INFO_LENGTH(pmt_stream_info_offset));
+		fprintf(stderr, "Searching PMT descriptors: Length of descriptors %d\n", PMT_INFO_LENGTH(stream_quality->ptr));
 #endif
-		while (offset < PMT_INFO_LENGTH(pmt_stream_info_offset)) {
-			unsigned char * descriptor_pointer = PMT_FIRST_STREAM_DESCRIPTORP(pmt_stream_info_offset) + offset;
+		while (offset < PMT_INFO_LENGTH(stream_quality->ptr)) {
+			unsigned char * descriptor_pointer = PMT_FIRST_STREAM_DESCRIPTORP(stream_quality->ptr) + offset;
 			offset = offset + DESCRIPTOR_LENGTH (descriptor_pointer) + 2; /* The 2 is the static size of the offset and the tag byte itself */
 #ifdef DEBUG
 			fprintf(stderr, "Searching PMT descriptors, current type 0x%x: next descriptor @%d\n", DESCRIPTOR_TAG(descriptor_pointer), offset);
@@ -430,14 +399,11 @@ static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned
 				bitrate = ((descriptor_pointer[2] & 0x3f)<<16) + (descriptor_pointer[3]<<8) + descriptor_pointer[4];
 				bitrate = bitrate * 50;
 				global_state->br = ( bitrate * 8 ) / 1024;
-				output_logmessage("add_payload_from_pmt(): %s maximum bitrate %.1f KByte/s (%.1f KBit/s)\n", stream_type_name, (float)bitrate/1024, ((float)bitrate * 8) /1024);
+				output_logmessage("add_payload_from_pmt(): %s maximum bitrate %.1f KByte/s (%.1f KBit/s)\n", stream_quality->stream_type_name, (float)bitrate/1024, ((float)bitrate * 8) /1024);
 			}
 			/* AC-3 Descriptor */
-			if ( stream_type == STREAM_MODE_AC3 && DESCRIPTOR_TAG(descriptor_pointer) == 0x6a ) {
-				output_logmessage("add_payload_from_pmt(): Found AC-3 audio descriptor for PID %d\n", PMT_PID(pmt_stream_info_offset));
-				if ( audio_all_checks == CHECK_DESCRIPTOR && global_state->stream_type == STREAM_MODE_AC3) {
-					audio_all_checks = AUDIO_STREAM;
-				}
+			if ( stream_quality->stream_type == STREAM_MODE_AC3 && DESCRIPTOR_TAG(descriptor_pointer) == 0x6a ) {
+				output_logmessage("add_payload_from_pmt(): Found AC-3 audio descriptor for PID %d\n", PMT_PID(stream_quality->ptr));
 				/* TODO parse AC-3 parameters out of fields */
 			}
 			/* AAC descriptor */
@@ -461,15 +427,15 @@ static void add_payload_from_pmt(unsigned char *pmt_stream_info_offset, unsigned
 		global_state->service_id = PMT_PROGRAM_NUMBER(start);
 		global_state->mime_type = mime_type(global_state->stream_type);
 		global_state->payload_added = 1;
-		output_logmessage("add_payload_from_pmt(): Found %s audio stream in PID %d (service_id %d)\n", stream_type_name, PMT_PID(pmt_stream_info_offset), global_state->service_id);
-		add_channel(CHANNEL_TYPE_PAYLOAD, PMT_PID(pmt_stream_info_offset));
+		output_logmessage("add_payload_from_pmt(): Found %s audio stream in PID %d (service_id %d)\n", stream_quality->stream_type_name, PMT_PID(stream_quality->ptr), global_state->service_id);
+		add_channel(CHANNEL_TYPE_PAYLOAD, PMT_PID(stream_quality->ptr));
 	} else if ( audio_all_checks == RDS_STREAM ) {
 		global_state->service_id = PMT_PROGRAM_NUMBER(start);
 		if ( global_state->prefer_rds > 0) {
-			output_logmessage("add_payload_from_pmt(): Found RDS data stream in PID %d\n", PMT_PID(pmt_stream_info_offset));
-			add_channel(CHANNEL_TYPE_RDS, PMT_PID(pmt_stream_info_offset));
+			output_logmessage("add_payload_from_pmt(): Found RDS data stream in PID %d\n", PMT_PID(stream_quality->ptr));
+			add_channel(CHANNEL_TYPE_RDS, PMT_PID(stream_quality->ptr));
 		} else {
-			output_logmessage("add_payload_from_pmt(): Ignoring RDS data stream in PID %d, RDS disabled by configuration\n", PMT_PID(pmt_stream_info_offset));
+			output_logmessage("add_payload_from_pmt(): Ignoring RDS data stream in PID %d, RDS disabled by configuration\n", PMT_PID(stream_quality->ptr));
 		}
 	}
 	return;
@@ -538,7 +504,7 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 				&& quality[i]->audio_preference == best_quality) {
 				/* Add audio */
 				if (! channel_map[PMT_PID(quality[i]->ptr)]) {
-					add_payload_from_pmt(quality[i]->ptr, start);
+					add_payload_from_pmt(quality[i], start);
 				}
 			}
 		}
@@ -546,7 +512,7 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 		for (i = 0; i < found_streams_counter; i++) {
 			if (quality[i]->stream_type == STREAM_MODE_RDS) {
 				if (! channel_map[PMT_PID(quality[i]->ptr)]) {
-					add_payload_from_pmt(quality[i]->ptr, start);
+					add_payload_from_pmt(quality[i], start);
 				}
 			}
 		}
