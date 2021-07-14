@@ -61,6 +61,8 @@
 #define TS_PACKET_ADAPTATION(b)		((b[3]&0x30)>>4)
 #define TS_PACKET_CONT_COUNT(b)		((b[3]&0x0F)>>0)
 #define TS_PACKET_ADAPT_LEN(b)		(b[4])
+#define TS_PACKET_ADAPT_PCR(b)		((b[5] & 0x10)>>4)
+#define TS_PACKET_ADAPT_PCRVALUE(b) ((int64_t)( ((int64_t)(b[6]))<<40 | ((int64_t)(b[7]))<<32 | ((int64_t)b[8])<<24 | b[9]<<16 | b[10]<<8 | b[11] ))
 #define TS_PACKET_POINTER(b)		(uint8_t)((((b[1]&0x40)>>6 == 1) && (b[4] < 183))? b[4] : 0)
 
 /* 
@@ -248,35 +250,37 @@ typedef struct ts2shout_channel_s {
 	uint8_t * buf_ptr;		// Pointer to start of audio data
 	uint32_t buf_size;		// Usable size of MPEG Audio Buffer
 	uint32_t buf_used;		// Amount of buffer used
-
-	int payload_size;				// Size of the payload
+	int payload_size;		// Size of the payload
 } ts2shout_channel_t;
 
 /* global information about the received programme */
 typedef struct programm_info_s {
-	uint8_t	info_available;				/* Information available */
-	uint8_t payload_added;				/* Payload is added, no longer scan PAT and PMT */
-	uint8_t	output_payload;				/* All header information is known, therefore audiodata can be read and output (for CGI mode) */
-	uint8_t sdt_fromstream;				/* Station name fetched from stream */
-	uint8_t	cache_written;				/* cache written in current session */
-	char station_name[STR_BUF_SIZE];	/* Name of station (normally only a few bytes) */
-	char stream_title[STR_BUF_SIZE];	/* StreamTitle for shoutcast stream */
+	uint8_t	info_available;             /* Information available */
+	uint8_t payload_added;              /* Payload is added, no longer scan PAT and PMT */
+	uint8_t	output_payload;             /* All header information is known, therefore audiodata can be read and output (for CGI mode) */
+	uint8_t sdt_fromstream;             /* Station name fetched from stream */
+	uint8_t	cache_written;              /* cache written in current session */
+	char station_name[STR_BUF_SIZE];    /* Name of station (normally only a few bytes) */
+	char stream_title[STR_BUF_SIZE];    /* StreamTitle for shoutcast stream */
 	char old_stream_title[STR_BUF_SIZE]; /* Old StreamTitle, that was given in last session */
-	uint32_t br;						/* Bitrate of stream e.g. 320000 kBit/s			*/
-	uint32_t sr;						/* Streamrate of stream e.g. 48 kHz == 48000 Hz */
-	uint8_t  latm_magic1;				/* LATM-Magic Byte 1 */
-	uint8_t	 latm_magic2;				/* LATM-Magic Byte 2 */
-	uint64_t bytes_streamed_read;		/* Total bytes read from stream */
-	uint64_t bytes_streamed_write;		/* Total bytes write to stdout/streamed to application/CGI */
-	uint16_t ts_sync_error;				/* Total global number of sync errors */
-	uint16_t service_id;				/* The service_id, aka program_id */
-	char *programme;					/* the environment variable PROGRAMMNO (no hassling arround with REDIRECT_ ) */
-	uint8_t	want_ac3;					/* do we want AC-3 output */
-	uint8_t prefer_rds;					/* do we prefer RDS  - instead of EPG? (only if there is RDS) */
-	uint8_t found_rds;					/* We found RDS, don't use EIT any longer */
-	uint16_t	transport_stream_id;	/* The transport stream id of the wanted programm stream (important for EIT/SDT scan) */
-	enum_stream_type stream_type;		/* The type of transport stream (abstract), fetch from PAT/PMT */
-	const char * mime_type;				/* The MIME type (e.g. audio/mpeg) of the current stream (indirect from PAT/PMT) */
+	uint32_t br;                        /* Bitrate of stream e.g. 320000 kBit/s	*/
+	uint32_t sr;                        /* Streamrate of stream e.g. 48 kHz == 48000 Hz */
+	uint8_t  latm_magic1;               /* LATM-Magic Byte 1 */
+	uint8_t	 latm_magic2;               /* LATM-Magic Byte 2 */
+	uint64_t bytes_streamed_read;       /* Total bytes read from stream */
+	uint64_t bytes_streamed_write;      /* Total bytes write to stdout/streamed to application/CGI */
+	uint16_t ts_sync_error;             /* Total global number of sync errors */
+	uint16_t service_id;                /* The service_id, aka program_id */
+	char *programme;                    /* the environment variable PROGRAMMNO (no hassling arround with REDIRECT_ ) */
+	uint8_t	want_ac3;                   /* do we want AC-3 output */
+	uint8_t prefer_rds;                 /* do we prefer RDS  - instead of EPG? (only if there is RDS) */
+	uint8_t found_rds;                  /* We found RDS, don't use EIT any longer */
+	uint16_t transport_stream_id;       /* The transport stream id of the wanted programm stream (important for EIT/SDT scan) */
+	enum_stream_type stream_type;       /* The type of transport stream (abstract), fetch from PAT/PMT */
+	const char * mime_type;             /* The MIME type (e.g. audio/mpeg) of the current stream (indirect from PAT/PMT) */
+	int64_t pcr_first;                  /* PCR, first found program clock reference in *used* audio PAYLOAD stream */
+	uint32_t playtime_s;                /* current playtime in stream, calculated out of PCR stamps, useful for manual filtering */
+	int8_t cgi_mode;                    /* Are we running as CGI programme? This is set if there is QUERY_STRING set in the environment */
 } programm_info_t; 
 
 /* An aggregator for all types of transport stream tables */

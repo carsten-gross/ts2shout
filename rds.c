@@ -279,7 +279,17 @@ void rds_handle_message(uint8_t* rds_message, uint8_t size) {
 		/* copy RDS to stream_title */
 		strcpy(global_state->stream_title, (char*)short_rt);
         utf8((unsigned char*)short_rt, utf8_rt);
-		output_logmessage("RDS: %s\n", utf8_rt);
+		/* Log this only in filter mode */
+		if (! global_state->cgi_mode) {
+			if ( global_state->playtime_s < 60) {
+				output_logmessage("RDS (%d s): %s\n", global_state->playtime_s, utf8_rt);
+			} else {
+				output_logmessage("RDS (%02d:%02d s): %s\n", (global_state->playtime_s / 60), global_state->playtime_s % 60, utf8_rt);
+			}
+		}
+		else {
+			output_logmessage("RDS: %s\n", utf8_rt);
+		}
 		// fprintf(stderr, "NEW RT(%s)\n", rds_info.rt);
 		rds_info.rt_changed = false;
 	}

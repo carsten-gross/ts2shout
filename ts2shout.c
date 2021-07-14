@@ -48,7 +48,6 @@ int channel_count=0;      /* Current listen channel count */
 
 uint8_t shoutcast=1;      /* Send shoutcast headers? */
 uint8_t	logformat=1;      /* Apache compatible output format */
-uint8_t	cgi_mode=0;       /* Are we running as CGI programme? This is set if there is QUERY_STRING set in the environment */
 
 uint64_t frame_count=0;	  /* ts-Frame number (used for debugging) */
 
@@ -977,13 +976,21 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 				if (0 != strcmp(tmp_title, global_state->stream_title)) {
 					// It's needed in iso8859-1 for StreamTitle, but in UTF-8 for logging
 					unsigned char utf8_message[STR_BUF_SIZE];
+					char current_playtime[15];
+					if (! global_state->cgi_mode ) {
+						if ( global_state->playtime_s < 60) {
+							snprintf(current_playtime, 18, " (%d s)", global_state->playtime_s);
+						} else {
+							snprintf(current_playtime, 15, " (%02d:%02d s)", (global_state->playtime_s / 60), global_state->playtime_s % 60);
+						}
+					}
 					strcpy(global_state->stream_title, tmp_title);
 					if (text_charset == CHARSET_LATIN1) {
-						output_logmessage("EIT: Current transmission `%s'\n", utf8((unsigned char*)short_description, utf8_message));
+						output_logmessage("EIT%s: `%s'\n", current_playtime, utf8((unsigned char*)short_description, utf8_message));
 					} else if ( text_charset == CHARSET_UTF8 ) {
-						output_logmessage("EIT: Current transmission `%s'\n", short_description); 
+						output_logmessage("EIT%s: `%s'\n", current_playtime, short_description); 
 					} else {
-						output_logmessage("EIT: Current transmission (MPEG-Charset: 0x%x, output likely garbaled) `%s'\n", text_charset, utf8((unsigned char*)short_description, utf8_message));
+						output_logmessage("EIT%s: (MPEG-Charset: 0x%x, output likely garbaled) `%s'\n", current_playtime, text_charset, utf8((unsigned char*)short_description, utf8_message));
 					}
 				}
 			} else {
@@ -1105,7 +1112,7 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 	 * we have easy access to the sync data here, therefore we access it
 	 * here - Perhaps we can move this elsewhere TODO */
 	if ((!global_state->cache_written) &&
-		cgi_mode					   &&
+		global_state->cgi_mode		   &&
 		global_state->sdt_fromstream   &&
 		chan->synced) {
 		add_cache(global_state);
@@ -1494,7 +1501,7 @@ int16_t process_ts_packet( unsigned char * buf )
 
 	/* If we just only receive packets and have output of payload
 	   (because no audio in stream or whatver) */
-	if (cgi_mode && ( ! global_state->output_payload )
+	if (global_state->cgi_mode && ( ! global_state->output_payload )
 		&& frame_count > 3000) {
 		output_logmessage("Received more then 320 kByte of data and payload output not started. bailing out\n");
 		return TS_HARD_ERROR;
@@ -1536,6 +1543,16 @@ int16_t process_ts_packet( unsigned char * buf )
 #ifdef DEBUG
 		output_logmessage("process_ts_packet: Adaption field with length %d found in frame #%d\n", TS_PACKET_ADAPT_LEN(buf), frame_count);
 #endif 
+		/* Update PCR? Only main audio stream */
+		if ( TS_PACKET_ADAPT_PCR(buf) ) {
+			if (channel_map[pid] && channel_map[pid]->channel_type == CHANNEL_TYPE_PAYLOAD) {
+				if (global_state->pcr_first == 0) {
+					global_state->pcr_first = TS_PACKET_ADAPT_PCRVALUE(buf);
+				} else {
+					global_state->playtime_s = (TS_PACKET_ADAPT_PCRVALUE(buf) - global_state->pcr_first)/(((double)27000000) * (double)(109.1));
+				}
+			}
+		}
 		pes_ptr += (TS_PACKET_ADAPT_LEN(buf) + 1);
 		pes_len -= (TS_PACKET_ADAPT_LEN(buf) + 1);
 	}
@@ -1594,7 +1611,7 @@ int main(int argc, char **argv)
 	
 	/* Are we running as CGI programme? */
 	if (getenv("QUERY_STRING")) {
-		cgi_mode = 1;
+		global_state->cgi_mode = 1;
 		if (getenv("MetaData") && strncmp(getenv("MetaData"), "1", 1) == 0) {
 			shoutcast = 1;
 		} else if (getenv("REDIRECT_MetaData") && strncmp(getenv("REDIRECT_MetaData"), "1", 1) == 0) {
@@ -1624,13 +1641,13 @@ int main(int argc, char **argv)
 	output_logmessage("%s %s in %s mode with%s RDS support.\n",
 		(global_state->want_ac3?"AC-3 streaming":"MPEG streaming"),
 		(shoutcast?"with shoutcast StreamTitles":"without shoutcast support, audio only"),
-		(cgi_mode?"CGI":"FILTER"), (global_state->prefer_rds?"":"out") );
+		(global_state->cgi_mode?"CGI":"FILTER"), (global_state->prefer_rds?"":"out") );
 	// Setup signal handlers
 	if (signal(SIGHUP, signal_handler) == SIG_IGN) signal(SIGHUP, SIG_IGN);
 	if (signal(SIGINT, signal_handler) == SIG_IGN) signal(SIGINT, SIG_IGN);
 	if (signal(SIGTERM, signal_handler) == SIG_IGN) signal(SIGTERM, SIG_IGN);
 
-	if (! cgi_mode ) {
+	if (! global_state->cgi_mode ) {
 		// Open the DRV device
 		if((fd_dvr = open("/dev/stdin", O_RDONLY)) < 0){
 			perror("Failed to open STDIN device");
@@ -1661,7 +1678,7 @@ int main(int argc, char **argv)
 	}
 	free(sdt_table);
 	free(eit_table);
-	if (! cgi_mode) {
+	if (! global_state->cgi_mode) {
 		close(fd_dvr);
 	}
 	exit(0);

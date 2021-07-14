@@ -6,6 +6,8 @@ CFLAGS ?=-O2 -Wall
 # DEBUG=-DDEBUG -g
 PREFIX ?= /usr/local
 CURRENT_VERSION:=$(shell git describe 2>/dev/null)
+
+SRCS=ts2shout.c pes.c mpa_header.c util.c crc32.c rds.c
 ifeq ($(CURRENT_VERSION),)
 CURRENT_VERSION := "unknown"
 endif
@@ -14,22 +16,21 @@ ifeq ($(CURRENT_DATE),)
 CURRENT_DATE := "unkown"
 endif
 
+DEPDIR := .deps
+DEPFLAGS = -MT $@ -MMD -MP -MF $(DEPDIR)/$*.d
 
+COMPILE.c = $(CC) -DCURRENT_VERSION="${CURRENT_VERSION}" -DCURRENT_DATE="${CURRENT_DATE}" $(DEPFLAGS) $(DEBUG) $(CFLAGS) $(CPPFLAGS) $(TARGET_ARCH) -c
+
+%.o : %.c
+%.o : %.c $(DEPDIR)/%.d | $(DEPDIR)
+	$(COMPILE.c) $(OUTPUT_OPTION) $<
+
+$(DEPDIR): ; @mkdir -p $@
+
+DEPFILES := $(SRCS:%.c=$(DEPDIR)/%.d)
 
 ts2shout: ts2shout.o mpa_header.o util.o pes.o crc32.o rds.o
 	${CC} ${DEBUG} ${LDFLAGS} -o ts2shout ts2shout.o rds.o mpa_header.o util.o pes.o crc32.o -lcurl
-ts2shout.o: ts2shout.c ts2shout.h rds.h mpa_header.h
-	${CC} ${DEBUG} -DCURRENT_VERSION="${CURRENT_VERSION}" -DCURRENT_DATE="${CURRENT_DATE}" ${CFLAGS} -c ts2shout.c
-mpa_header.o: mpa_header.c mpa_header.h ts2shout.h
-	${CC} ${DEBUG} ${CFLAGS} -c mpa_header.c
-pes.o: pes.c ts2shout.h
-	${CC} ${DEBUG} ${CFLAGS} -c pes.c
-util.o: util.c ts2shout.h
-	${CC} ${DEBUG} ${CFLAGS} -c util.c
-crc32.o: crc32.c
-	${CC} ${DEBUG} ${CFLAGS} -c crc32.c
-rds.o: rds.c rds.h ts2shout.h
-	${CC} ${DEBUG} ${CFLAGS} -c rds.c
 
 clean:
 	rm -f *.o ts2shout
@@ -37,4 +38,8 @@ clean:
 install: ts2shout
 	install -g root -m 555 -o root ts2shout ${PREFIX}/bin/ts2shout
 	install -D -g root -m 444 -o root ts2shout.1 ${PREFIX}/man/man1/ts2shout.1 
+
+
+$(DEPFILES):
+include $(wildcard $(DEPFILES))
 
