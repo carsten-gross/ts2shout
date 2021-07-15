@@ -5,9 +5,9 @@ CC ?= gcc
 CFLAGS ?=-O2 -Wall
 # DEBUG=-DDEBUG -g
 PREFIX ?= /usr/local
-CURRENT_VERSION:=$(shell git describe 2>/dev/null)
-
 SRCS=ts2shout.c pes.c mpa_header.c util.c crc32.c rds.c
+
+CURRENT_VERSION:=$(shell git describe 2>/dev/null)
 ifeq ($(CURRENT_VERSION),)
 CURRENT_VERSION := "unknown"
 endif
