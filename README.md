@@ -27,34 +27,37 @@ you have a tvheadend or a similar streaming server available that provides the
 MPEG transport stream by a network protocol libcurl understands. Please see
 a configuration example for apache2 below.
 
-ts2shout outputs a shoutcast stream with the first found mpeg audio stream in
+ts2shout outputs a shoutcast stream with the "best" found mpeg audio stream in
 PAT/PMT and the "current programm" from the mpeg EIT ("EPG") translated to
 "StreamTitle" all 8192 bytes inside the mpeg stream. This is a standard for
 most shoutcast radio-stations and described in
-http://www.smackfu.com/stuff/programming/shoutcast.html. ts2shout should work
-with most DVB-C/DVB-S radio stations and is tested by myself with Unitymedia
-DVB-C, Hotbird 13E and Astra 19.2E DVB-S satellite reception.
+https://stackoverflow.com/questions/44050266/get-info-from-streaming-radio.
+ts2shout should work with most DVB-C/DVB-S radio stations and is tested by
+myself with Unitymedia DVB-C, Hotbird 13E and Astra 19.2E DVB-S satellite
+reception.
 
 German and Swiss radio on DVB-S (and also DVB-C) supports RDS within the MPEG
 transport stream. The RDS data (Radio Data System, that thing from the Analog
-Radio on FM) is just inserted inside the padding bytes of the MPEG stream. If
+Radio on FM) is just inserted inside the padding bytes MPEG1/2 audio stream. If
 the stream uses AAC-LATM for audio RDS is also searched in a defined private
-stream in a separate MPEG pid. If you supply the environment variable RDS or
-the command line parameter rds it is preferred over MPEG EIT/EPG data. This is
-useful to get title and artist information in the shoutcast stream. 
+stream in a separate MPEG pid. There seems to be a method to include RDS also
+in AAC-LATM audio directly, this is currently *not* supported by ts2shout. If
+you supply the environment variable RDS or the command line parameter rds it is
+preferred over MPEG EIT/EPG data. This is useful to get title and artist
+information in the shoutcast stream.
 
 Just compile the application with make on your linux box and install it
-manually e.g. to /usr/local/bin/ts2shout . It does not need any libraries for
+manually e.g. to /usr/local/bin/ts2shout. It does not need any libraries for
 shoutcast or mpeg as it just parses and uses a minimum set of mpeg
 specification just to work for me in my special setup to get stream information
 on the Squeezebox.
 
-Some german cultural programmes also have AC3 streams available. Examples are
-"Bayern 4 Klassik" or "SWR2". If you supply the command line parameter "ac3" or
-(in CGI mode) the value "1" in the environment variable "AC3" AC-3 stream will
-be preferred. Some programmes have AC-3 only (NDR-Kultur), in this case you'll
-always get AC-3 audio. This currently doesn't work with the squeezebox but you
-can fetch the stream and it can be decoded by ffmpeg or played with mplayer.
+Some german cultural programmes also have AC3 streams available. If you supply
+the command line parameter "ac3" or (in CGI mode) the value "1" in the
+environment variable "AC3" AC-3 stream will be preferred. Some programmes have
+AC-3 only (NDR-Kultur), in this case you'll always get AC-3 audio. This
+currently doesn't work with the squeezebox but you can fetch the stream and it
+can be decoded by ffmpeg or played with mplayer.
 
 ts2shout can be used in conjunction with tvheadend and apache2 as follows: 
 
