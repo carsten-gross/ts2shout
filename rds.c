@@ -111,7 +111,7 @@ bool check_message(uint8_t* rds_message, uint8_t size) {
 	uint16_t crc_result = crc16(rds_message, size);
 	if (crc_result != 0) {
 #ifdef DEBUG
-		output_logmessage("CRC16 error in RDS Message (size=%d, crc_result=0x%x)\n", size, crc_result);
+		output_logmessage("CRC16 error in RDS Message number 0x%02x (size=%d, crc_result=0x%x)\n", rds_message[2], size, crc_result);
 		DumpHex(rds_message, size);
 #endif
 		return false;
@@ -296,6 +296,42 @@ void rds_handle_message(uint8_t* rds_message, uint8_t size) {
 	return;
 }
 
+/* convert exactly one frame that was given in extra PES. It's in correct order,
+   but 0xfd 00 = 0xfd, 0xfd 01 = 0xfe, 0xfd 02 = 0xff despited being superfluos */
+void rds_convert_from_extra_pes(uint8_t* buffer, size_t size) {
+	static uint8_t current_pos = 0;
+	static uint8_t rds_message[255];
+	int32_t  i = 0;
+	uint8_t rds_data_size = buffer[2];
+	if (rds_data_size == 0) {
+		return;
+	}
+	for (i = 0; i < size; i++) {
+		uint8_t mychar = buffer[i];
+		if (mychar == 0xfd) {
+            /* special marker: 0xfd 0x01 means 0xfe, 0xfd 0x02 means 0xff */
+            i++;
+            rds_message[current_pos] = mychar + buffer[i];
+            current_pos ++;
+        } else {
+            rds_message[current_pos] = mychar;
+            current_pos ++;
+        }
+	}
+#ifdef DEBUG
+	fprintf(stderr, "Added RDS Data from extra PES Stream\n");
+	DumpHex(rds_message, current_pos);
+#endif
+	rds_handle_message(rds_message, current_pos);
+	current_pos = 0;
+	memset(rds_message, 0, 255);
+	return;
+}
+
+
+
+
+
 /* decode exactly one frame -  char * text points to 255 byte of char
  * buffer is the buffer of the mpeg-frame and offset is the current read offset
  * it points to the "0xff" of the mpeg frame start! */
@@ -330,7 +366,7 @@ void rds_decode_oneframe(uint8_t* buffer, int offset) {
 		k ++; 
 	}
 #ifdef DEBUG
-	fprintf(stderr, "Added RDS Data from PES data\n");
+	fprintf(stderr, "Added RDS Data from AUDIO-stream\n");
 	DumpHex(rds_message, current_pos);
 #endif
 	return;

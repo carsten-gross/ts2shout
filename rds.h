@@ -24,7 +24,9 @@
 
 // rda_data_scanner
 void rds_data_scan( ts2shout_channel_t * chan);
-void init_rds(); 
-void rds_handle_message(uint8_t* rds_message, uint8_t size);
+void init_rds();
+void rds_decode_oneframe(uint8_t* buffer, int offset);
+void rds_convert_from_extra_pes(uint8_t* buffer, uint8_t size);
+// void rds_handle_message(uint8_t* rds_message, uint8_t size);
 void DumpHex(const void* data, size_t size);
 #endif
