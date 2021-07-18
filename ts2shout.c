@@ -976,12 +976,12 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 				if (0 != strcmp(tmp_title, global_state->stream_title)) {
 					// It's needed in iso8859-1 for StreamTitle, but in UTF-8 for logging
 					unsigned char utf8_message[STR_BUF_SIZE];
-					char current_playtime[15];
+					char current_playtime[19];
 					if (! global_state->cgi_mode ) {
 						if ( global_state->playtime_s < 60) {
 							snprintf(current_playtime, 18, " (%d s)", global_state->playtime_s);
 						} else {
-							snprintf(current_playtime, 15, " (%02d:%02d s)", (global_state->playtime_s / 60), global_state->playtime_s % 60);
+							snprintf(current_playtime, 18, " (%02d:%02d s)", (global_state->playtime_s / 60), global_state->playtime_s % 60);
 						}
 					}
 					strcpy(global_state->stream_title, tmp_title);
