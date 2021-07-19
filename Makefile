@@ -5,7 +5,7 @@ CC ?= gcc
 CFLAGS ?=-O2 -Wall
 # DEBUG=-DDEBUG -g
 PREFIX ?= /usr/local
-SRCS=ts2shout.c pes.c mpa_header.c util.c crc32.c rds.c
+SRCS=ts2shout.c pes.c mpa_header.c util.c crc32.c rds.c dsmcc.c
 
 CURRENT_VERSION:=$(shell git describe 2>/dev/null)
 ifeq ($(CURRENT_VERSION),)
@@ -29,8 +29,8 @@ $(DEPDIR): ; @mkdir -p $@
 
 DEPFILES := $(SRCS:%.c=$(DEPDIR)/%.d)
 
-ts2shout: ts2shout.o mpa_header.o util.o pes.o crc32.o rds.o
-	${CC} ${DEBUG} ${LDFLAGS} -o ts2shout ts2shout.o rds.o mpa_header.o util.o pes.o crc32.o -lcurl
+ts2shout: ts2shout.o mpa_header.o util.o pes.o crc32.o rds.o dsmcc.o
+	${CC} ${DEBUG} ${LDFLAGS} -o ts2shout ts2shout.o rds.o mpa_header.o util.o pes.o crc32.o dsmcc.o -lcurl
 
 clean:
 	rm -f *.o ts2shout
