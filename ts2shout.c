@@ -59,6 +59,7 @@ ts2shout_channel_t *channels[MAX_CHANNEL_COUNT];
 /* Structure that keeps track of connected EIT frames */
 section_aggregate_t *eit_table;
 section_aggregate_t *sdt_table;
+section_aggregate_t *dsmcc_table;
 
 
 /* Global application structure */
@@ -218,12 +219,8 @@ static void set_latm_parameters(uint8_t aac_profile) {
 audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset, unsigned char *start) {
 	unsigned int stream_type;
 	audio_quality_t * stream_quality = NULL;
-	enum {
-		NO_AUDIO_STREAM,
-		CHECK_DESCRIPTOR,
-		AUDIO_STREAM,
-		RDS_STREAM } audio_all_checks = NO_AUDIO_STREAM; /* Local use only: 0 = no audio found, 1 = unsufficent descriptor data, 2 = Audio OK, 3 = RDS  */
-	
+	enum_audio_checks audio_all_checks = NO_AUDIO_STREAM;
+
 	stream_type = PMT_STREAM_TYPE(pmt_stream_info_offset);
 	stream_quality = malloc(sizeof(audio_quality_t));
 	memset(stream_quality, 0, sizeof(audio_quality_t));
@@ -244,11 +241,16 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 			stream_quality->audio_preference = AUDIO_PREFERENCE_BEST;
 			break;
 		case 0x06:	/* AC-3 */
-			audio_all_checks = CHECK_DESCRIPTOR;
+			audio_all_checks = AC3_CHECK_DESCRIPTOR;
 			stream_quality->stream_type_name = "AC-3";
 			stream_quality->stream_type = STREAM_MODE_AC3;
 			/* If option AC3 is set, the preference is updated to "BEST" below */
 			stream_quality->audio_preference = AUDIO_PREFERENCE_LOW;
+			break;
+		case 0x0b:  /* DSM-CC (it's not audio, it's a data carosuel) */
+			audio_all_checks = DSMCC_STREAM;
+			stream_quality->stream_type_name = "DSM-CC";
+			stream_quality->stream_type = STREAM_MODE_DSMCC;
 			break;
 		case 0x0f:	/* MPEG 2 AAC */
 			audio_all_checks = AUDIO_STREAM;
@@ -292,7 +294,7 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 #ifdef DEBUG
 				output_logmessage("add_payload_from_pmt(): Found AC-3 audio descriptor for PID %d\n", PMT_PID(pmt_stream_info_offset));
 #endif
-				if ( audio_all_checks == CHECK_DESCRIPTOR && stream_quality->stream_type == STREAM_MODE_AC3) {
+				if ( audio_all_checks == AC3_CHECK_DESCRIPTOR && stream_quality->stream_type == STREAM_MODE_AC3) {
 					audio_all_checks = AUDIO_STREAM;
 				}
 			}
@@ -329,7 +331,7 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 		}
 	}
 	/* Check for AC-3 descriptors, if they weren't there, its not AC-3 */
-	if ( audio_all_checks == CHECK_DESCRIPTOR ) {
+	if ( audio_all_checks == AC3_CHECK_DESCRIPTOR ) {
 		stream_quality->stream_type = STREAM_MODE_NONE;
 	}
 	/* If the user wants AC-3 we maximum prefer it */
@@ -359,11 +361,9 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 /* Get info about an available media stream (we want mp1/mp2/mp4 or AC-3) */
 
 static void add_payload_from_pmt(audio_quality_t * stream_quality, unsigned char *start) {
-	enum {
-		NO_AUDIO_STREAM,
-		CHECK_DESCRIPTOR,
-		AUDIO_STREAM,
-		RDS_STREAM } audio_all_checks = NO_AUDIO_STREAM; /* Local use only: 0 = no audio found, 1 = unsufficent descriptor data, 2 = Audio OK, 3 = RDS  */
+
+	enum_audio_checks audio_all_checks = NO_AUDIO_STREAM;
+
 	switch ( stream_quality->stream_type ) {
 		case STREAM_MODE_MPEG:
 		case STREAM_MODE_AAC:
@@ -374,6 +374,9 @@ static void add_payload_from_pmt(audio_quality_t * stream_quality, unsigned char
 			break;
 		case STREAM_MODE_RDS:
 			audio_all_checks = RDS_STREAM;
+			break;
+		case STREAM_MODE_DSMCC:
+			audio_all_checks = DSMCC_STREAM;
 			break;
 		default:
 			output_logmessage("add_payload_from_pmt(): Programm error, no valid stream-type given (%d)\n", stream_quality->stream_type); 
@@ -436,6 +439,10 @@ static void add_payload_from_pmt(audio_quality_t * stream_quality, unsigned char
 		} else {
 			output_logmessage("add_payload_from_pmt(): Ignoring RDS data stream in PID %d, RDS disabled by configuration\n", PMT_PID(stream_quality->ptr));
 		}
+	} else if ( audio_all_checks == DSMCC_STREAM ) {
+		global_state->service_id = PMT_PROGRAM_NUMBER(start);
+		output_logmessage("add_payload_from_pmt(): Found DSM-CC data stream in PID %d\n", PMT_PID(stream_quality->ptr));
+		add_channel(CHANNEL_TYPE_DSMCC, PMT_PID(stream_quality->ptr));
 	}
 	return;
 }
@@ -499,7 +506,8 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 		/* Search for Audio in best quality */
 		for (i = 0; i < found_streams_counter; i++) {
 			if (quality[i]->stream_type != STREAM_MODE_NONE 
-				&& quality[i]->stream_type != STREAM_MODE_RDS 
+				&& quality[i]->stream_type != STREAM_MODE_RDS
+				&& quality[i]->stream_type != STREAM_MODE_DSMCC
 				&& quality[i]->audio_preference == best_quality) {
 				/* Add audio */
 				if (! channel_map[PMT_PID(quality[i]->ptr)]) {
@@ -510,6 +518,14 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 		/* Search RDS */
 		for (i = 0; i < found_streams_counter; i++) {
 			if (quality[i]->stream_type == STREAM_MODE_RDS) {
+				if (! channel_map[PMT_PID(quality[i]->ptr)]) {
+					add_payload_from_pmt(quality[i], start);
+				}
+			}
+		}
+		/* Search DSMCC */
+		for (i = 0; i < found_streams_counter; i++) {
+			if (quality[i]->stream_type == STREAM_MODE_DSMCC) {
 				if (! channel_map[PMT_PID(quality[i]->ptr)]) {
 					add_payload_from_pmt(quality[i], start);
 				}
@@ -1015,6 +1031,33 @@ static void extract_rds_payload( unsigned char *pes_ptr, size_t pes_len, ts2shou
 	if ((es_len - 2) > 0) {
 		rds_convert_from_extra_pes(es_ptr + 1, es_len - 2);
 	}
+	return;
+}
+
+static void extract_dsmcc_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes, unsigned char* ts_full_frame )
+{
+	unsigned char* start = NULL;
+    start = pes_ptr + start_of_pes;
+
+    /* collect up continuation frames */
+    if (! collect_continuation(dsmcc_table, pes_ptr, pes_len, start_of_pes, ts_full_frame, CHANNEL_TYPE_DSMCC )) {
+        return;
+    }
+    start = dsmcc_table->buffer;
+    if (crc32(start, EIT_SECTION_LENGTH(start)+3)!= 0) {
+        /* crc32 not valid, throw away continued data */
+        dsmcc_table->ob_used = 0;
+        dsmcc_table->buffer_valid = 0;
+        return;
+    }
+    if (dsmcc_table->buffer_valid) {
+#ifdef DEBUG
+		fprintf(stderr, "DSMCC: crc32 %s (%d, l: %d)\n",(  crc32(start, EIT_SECTION_LENGTH(start)+3)== 0?"OK":"FAIL"), crc32(start, EIT_SECTION_LENGTH(start)+3), EIT_SECTION_LENGTH(start)+3);
+		// DumpHex(start, EIT_SECTION_LENGTH(start));
+#endif
+		handle_dsmcc_message(start, dsmcc_table->section_length);
+		dsmcc_table->buffer_valid = 0;
+    }
 	return;
 }
 
@@ -1579,6 +1622,9 @@ int16_t process_ts_packet( unsigned char * buf )
 			case CHANNEL_TYPE_RDS:
 				extract_rds_payload ( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
 				break;
+			case CHANNEL_TYPE_DSMCC:
+				extract_dsmcc_payload ( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf), buf );
+				break;
 			case CHANNEL_TYPE_PAYLOAD:
 				streamed = extract_pes_payload( pes_ptr, pes_len, channel_map[ pid ], TS_PACKET_PAYLOAD_START(buf) );
 				if (streamed < 0) {
@@ -1607,6 +1653,7 @@ int main(int argc, char **argv)
 	for (i=0;i<MAX_CHANNEL_COUNT;i++) channels[i]=NULL;
 	eit_table = calloc(1, sizeof(section_aggregate_t));
 	sdt_table = calloc(1, sizeof(section_aggregate_t));
+	dsmcc_table = calloc(1, sizeof(section_aggregate_t));
 	global_state = calloc(1, sizeof(programm_info_t));
 	
 	/* Are we running as CGI programme? */
@@ -1637,6 +1684,7 @@ int main(int argc, char **argv)
 	}
 	init_structures();
 	init_rds();
+
 	output_logmessage("ts2shout version " XSTR(CURRENT_VERSION) " compiled " XSTR(CURRENT_DATE) " started\n");
 	output_logmessage("%s %s in %s mode with%s RDS support.\n",
 		(global_state->want_ac3?"AC-3 streaming":"MPEG streaming"),
@@ -1676,6 +1724,7 @@ int main(int argc, char **argv)
 		if (channels[i]->buf) free( channels[i]->buf );
 		free( channels[i] );
 	}
+	free(dsmcc_table);
 	free(sdt_table);
 	free(eit_table);
 	if (! global_state->cgi_mode) {

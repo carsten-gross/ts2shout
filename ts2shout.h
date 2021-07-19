@@ -190,7 +190,8 @@
 		CHANNEL_TYPE(CHANNEL_TYPE_EIT)  \
 		CHANNEL_TYPE(CHANNEL_TYPE_PMT)  \
 		CHANNEL_TYPE(CHANNEL_TYPE_PAYLOAD) \
-		CHANNEL_TYPE(CHANNEL_TYPE_RDS)
+		CHANNEL_TYPE(CHANNEL_TYPE_RDS) \
+		CHANNEL_TYPE(CHANNEL_TYPE_DSMCC)
 
 #define GENERATE_ENUM(ENUM) ENUM,
 #define GENERATE_STRING(STRING) #STRING,
@@ -200,13 +201,26 @@ typedef enum {
 	FOREACH_CHANNEL_TYPE(GENERATE_ENUM)
 } enum_channel_type;
 
+/* A detailed description of the format of the given PES, it's used for checking of sync
+ * markings or for the used MIME type */
 typedef enum {
 	STREAM_MODE_NONE,
-	STREAM_MODE_MPEG,   /* MPEG-1/2 .. normal format for audio */
+	STREAM_MODE_MPEG,   /* Streamtype 0x03,0x04 MPEG-1/2 .. normal format for audio */
 	STREAM_MODE_AAC,    /* Streamtype 0x0f ...simple AAC in MPEG-2 encapsulation */
 	STREAM_MODE_AACP,   /* Streamtype 0x11 ... HE-AAC in MPEG-4 encapsulation */
-	STREAM_MODE_AC3,
-	STREAM_MODE_RDS } enum_stream_type; 
+	STREAM_MODE_AC3,    /* Streamtype 0x6 ... private data ... additional descriptor is checked */
+	STREAM_MODE_RDS,    /* Streamtype 0x89 (also a private data descriptor) .. additional descriptors for "this is RDS" also checked */
+	STREAM_MODE_DSMCC   /* Streamtype 0x0b (also with private descriptors) ... DSM-CC carousel data */
+} enum_stream_type;
+
+/* A brief description of what this channel provides (pid data stream) */
+typedef enum {
+	NO_AUDIO_STREAM,        /* No audio stream at all */
+	AC3_CHECK_DESCRIPTOR,   /* The AC-3 descriptor is not checked yet */
+	AUDIO_STREAM,           /* This stream is an audio stream */
+	RDS_STREAM,             /* This stream provides RDS data in a PES */
+	DSMCC_STREAM            /* This stream is a DSMCC data stream */
+} enum_audio_checks;
 
 typedef enum {
 	CHARSET_LATIN1	= 5,
@@ -330,5 +344,8 @@ unsigned char *utf8(unsigned char* in, unsigned char* out);
 
 void add_cache(programm_info_t* global_state); 
 void fetch_cached_parameters(programm_info_t* global_state); 
+
+/* In dsmcc.c */
+void handle_dsmcc_message(unsigned char *buf, size_t len);
 
 #endif
