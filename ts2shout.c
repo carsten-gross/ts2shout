@@ -162,7 +162,7 @@ static void extract_pat_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	// if (! channel_map[PAT_PROGRAMME_PMT(one_program)] ) { // This was here before, but does not work anymore, because we allow more than one PMT result
 	/* Add PMT if we don't have a valid transport_stream_id already */
 	if ( global_state->transport_stream_id  != PAT_TRANSPORT_STREAM_ID(start)) {
-		if (crc32(start, PAT_SECTION_LENGTH(start) + 3) == 0) {
+		if (dvb_crc32(start, PAT_SECTION_LENGTH(start) + 3) == 0) {
 			unsigned int i = 0;
 #ifdef DEBUG
 			// DumpHex(one_program, PAT_SECTION_LENGTH(start) - 8);
@@ -222,7 +222,7 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 	enum_audio_checks audio_all_checks = NO_AUDIO_STREAM;
 
 	stream_type = PMT_STREAM_TYPE(pmt_stream_info_offset);
-	stream_quality = malloc(sizeof(audio_quality_t));
+	stream_quality = calloc(1, sizeof(audio_quality_t));
 	memset(stream_quality, 0, sizeof(audio_quality_t));
 	/* Search for audio streams and make an assumption about preference
 	 * We want MP1/2, AAC-LATM, AAC, AC-3 (in this order)
@@ -476,8 +476,8 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	/* Look into table 0x02 containing the PID to be read */
 	if ( PMT_TABLE_ID(start) == 2) {
 		/* Check crc32 to avoid checking it later on */
-		if (crc32(start, PAT_SECTION_LENGTH(start) + 3) != 0) {
-			output_logmessage("extract_pmt_payload: crc32 does not match %d found, 0 expected\n", crc32(start, PAT_SECTION_LENGTH(start) + 3));
+		if (dvb_crc32(start, PAT_SECTION_LENGTH(start) + 3) != 0) {
+			output_logmessage("extract_pmt_payload: crc32 does not match %d found, 0 expected\n", dvb_crc32(start, PAT_SECTION_LENGTH(start) + 3));
 			return;
 		}
 		if (PMT_SECTION_NUMBER(start) == 0 && PMT_LAST_SECTION_NUMBER(start) == 0) {
@@ -554,10 +554,10 @@ uint8_t	fetch_next(section_aggregate_t* aggregation, uint8_t *buffer, uint8_t* s
 		*size = 0;
 		return 0;
 	}
-	if (crc32(aggregation->buffer, section_length + 3) != 0) {
+	if (dvb_crc32(aggregation->buffer, section_length + 3) != 0) {
 		/* not valid */
 		#ifdef DEBUG
-		fprintf(stderr, "fetch_next(): Found data, but crc32 is wrong %d!=0", crc32(aggregation->buffer, section_length + 3) );
+		fprintf(stderr, "fetch_next(): Found data, but crc32 is wrong %d!=0", dvb_crc32(aggregation->buffer, section_length + 3) );
 		#endif
 		*size = 0;
 		return 0;
@@ -770,9 +770,9 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 #else
 	if (global_state->sdt_fromstream == 0) {
 #endif
-		if (crc32(start, sdt_table->section_length + 3) != 0) {
+		if (dvb_crc32(start, sdt_table->section_length + 3) != 0) {
 		#ifdef DEBUG
-			output_logmessage("SDT: crc32 does not match, calculated %d, expected 0\n", crc32(start, sdt_table->section_length + 3));
+			output_logmessage("SDT: crc32 does not match, calculated %d, expected 0\n", dvb_crc32(start, sdt_table->section_length + 3));
 		#endif
 		} else {
 			if ( PMT_TABLE_ID(start) == 0x42 ) {
@@ -883,11 +883,11 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	start = eit_table->buffer;
 	if (eit_table->buffer_valid) {
 		#ifdef DEBUG
-			fprintf(stderr, "EIT: crc32 %s (%d, l: %d)\n",(  crc32(start, EIT_SECTION_LENGTH(start)+3)== 0?"OK":"FAIL"), crc32(start, EIT_SECTION_LENGTH(start)+3), EIT_SECTION_LENGTH(start)+3);
+			fprintf(stderr, "EIT: crc32 %s (%d, l: %d)\n",(  dvb_crc32(start, EIT_SECTION_LENGTH(start)+3)== 0?"OK":"FAIL"), dvb_crc32(start, EIT_SECTION_LENGTH(start)+3), EIT_SECTION_LENGTH(start)+3);
 			DumpHex(start, EIT_SECTION_LENGTH(start));
 		#endif
 	}
-	if (crc32(start, EIT_SECTION_LENGTH(start)+3)!= 0) {
+	if (dvb_crc32(start, EIT_SECTION_LENGTH(start)+3)!= 0) {
 		/* crc32 not valid, throw away continued data */
 		eit_table->ob_used = 0;
 		eit_table->buffer_valid = 0;
@@ -921,9 +921,9 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 		/* 0x4d = Short event descriptor found, transport_stream matches */
 		if (DESCRIPTOR_TAG(description_start) == 0x4d && EIT_TRANSPORT_STREAM_ID(start) == global_state->transport_stream_id ) {
 			/* Now calculate crc32, because we want to do something with the data */
-			if (crc32(start, EIT_SECTION_LENGTH(start)+3) != 0) {
+			if (dvb_crc32(start, EIT_SECTION_LENGTH(start)+3) != 0) {
 				#ifdef DEBUG
-				fprintf(stderr, "EIT: crc32 does not match, calculated %d, expected 0, using section length: %d\n", crc32(start, EIT_SECTION_LENGTH(start)+3), EIT_SECTION_LENGTH(start)+3);
+				fprintf(stderr, "EIT: crc32 does not match, calculated %d, expected 0, using section length: %d\n", dvb_crc32(start, EIT_SECTION_LENGTH(start)+3), EIT_SECTION_LENGTH(start)+3);
 				#endif
 				eit_table->buffer_valid = 0;
 				return;
@@ -1044,7 +1044,7 @@ static void extract_dsmcc_payload( unsigned char *pes_ptr, size_t pes_len, ts2sh
         return;
     }
     start = dsmcc_table->buffer;
-    if (crc32(start, EIT_SECTION_LENGTH(start)+3)!= 0) {
+    if (dvb_crc32(start, EIT_SECTION_LENGTH(start)+3)!= 0) {
         /* crc32 not valid, throw away continued data */
         dsmcc_table->ob_used = 0;
         dsmcc_table->buffer_valid = 0;
@@ -1052,7 +1052,7 @@ static void extract_dsmcc_payload( unsigned char *pes_ptr, size_t pes_len, ts2sh
     }
     if (dsmcc_table->buffer_valid) {
 #ifdef DEBUG
-		fprintf(stderr, "DSMCC: crc32 %s (%d, l: %d)\n",(  crc32(start, EIT_SECTION_LENGTH(start)+3)== 0?"OK":"FAIL"), crc32(start, EIT_SECTION_LENGTH(start)+3), EIT_SECTION_LENGTH(start)+3);
+		fprintf(stderr, "DSMCC: crc32 %s (%d, l: %d)\n",(  dvb_crc32(start, EIT_SECTION_LENGTH(start)+3)== 0?"OK":"FAIL"), dvb_crc32(start, EIT_SECTION_LENGTH(start)+3), EIT_SECTION_LENGTH(start)+3);
 		// DumpHex(start, EIT_SECTION_LENGTH(start));
 #endif
 		handle_dsmcc_message(start, dsmcc_table->section_length);

@@ -318,9 +318,11 @@ void rds_convert_from_extra_pes(uint8_t* buffer, size_t size) {
             current_pos ++;
         }
 	}
+#if 0
 #ifdef DEBUG
 	fprintf(stderr, "Added RDS Data from extra PES Stream\n");
 	DumpHex(rds_message, current_pos);
+#endif
 #endif
 	rds_handle_message(rds_message, current_pos);
 	current_pos = 0;
@@ -365,9 +367,11 @@ void rds_decode_oneframe(uint8_t* buffer, int offset) {
 		}
 		k ++; 
 	}
+#if 0 
 #ifdef DEBUG
 	fprintf(stderr, "Added RDS Data from AUDIO-stream\n");
 	DumpHex(rds_message, current_pos);
+#endif
 #endif
 	return;
 }

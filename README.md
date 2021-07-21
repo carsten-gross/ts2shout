@@ -27,6 +27,11 @@ you have a tvheadend or a similar streaming server available that provides the
 MPEG transport stream by a network protocol libcurl understands. Please see
 a configuration example for apache2 below.
 
+Additionally I started to implement DSM-CC to fetch stream images. This
+requires the availability of libz. Please install libz and the corresponding
+libz-dev package. Currently dsmcc is disabled in the code, because it is a
+pre-alpha version just writing the stream data files into a cache dir.
+
 ts2shout outputs a shoutcast stream with the "best" found mpeg audio stream in
 PAT/PMT and the "current programm" from the mpeg EIT ("EPG") translated to
 "StreamTitle" all 8192 bytes inside the mpeg stream. This is a standard for

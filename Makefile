@@ -30,7 +30,7 @@ $(DEPDIR): ; @mkdir -p $@
 DEPFILES := $(SRCS:%.c=$(DEPDIR)/%.d)
 
 ts2shout: ts2shout.o mpa_header.o util.o pes.o crc32.o rds.o dsmcc.o
-	${CC} ${DEBUG} ${LDFLAGS} -o ts2shout ts2shout.o rds.o mpa_header.o util.o pes.o crc32.o dsmcc.o -lcurl
+	${CC} ${DEBUG} ${LDFLAGS} -o ts2shout ts2shout.o rds.o mpa_header.o util.o pes.o crc32.o dsmcc.o -lcurl -lz
 
 clean:
 	rm -f *.o ts2shout
