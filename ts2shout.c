@@ -247,7 +247,7 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 			/* If option AC3 is set, the preference is updated to "BEST" below */
 			stream_quality->audio_preference = AUDIO_PREFERENCE_LOW;
 			break;
-		case 0x0b:  /* DSM-CC (it's not audio, it's a data carosuel) */
+		case 0x0b:  /* DSM-CC (it's not audio, it's a data carousel) */
 			audio_all_checks = DSMCC_STREAM;
 			stream_quality->stream_type_name = "DSM-CC";
 			stream_quality->stream_type = STREAM_MODE_DSMCC;
@@ -267,15 +267,15 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 		case 0x89:	/* If MPEG 2/4 AAC (LATM) RDS data is in a separate PID */
 			audio_all_checks = RDS_STREAM;
 			stream_quality->stream_type_name = "RDS";
-			stream_quality->stream_type = STREAM_MODE_NONE; 
+			stream_quality->stream_type = STREAM_MODE_NONE;
 			break;
 		default:
 			/* No useful stream found */
-			return stream_quality; 
+			return stream_quality;
 			break;
 	}
 	/* We found a supported media or data stream */	
-	stream_quality->ptr = pmt_stream_info_offset; 
+	stream_quality->ptr = pmt_stream_info_offset;
 	/* We have to scan the descriptors for AC-3, AAC and RDS informations */
 	uint8_t rds_ok = 0;
 	{
@@ -306,13 +306,13 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 			if ( DESCRIPTOR_TAG(descriptor_pointer) == 0x6b ) {
 				if (descriptor_pointer[2] == 0x40) {
 					rds_ok |= 1;
-				} 
+				}
 				/* RDS = length = 1, type 0x40 */
 			}
 			/* Stream identifier descriptor */
 			if ( DESCRIPTOR_TAG(descriptor_pointer) == 0x52 ) {
 				if ( descriptor_pointer[2] == 0x32) {
-					rds_ok |= 2; 
+					rds_ok |= 2;
 				}
 				/* length = 1, content = 0x32 */
 			}
@@ -344,10 +344,10 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 	/* Adjust preference of the different AAC profiles */
 	switch (stream_quality->aac_profile) {
 		case 0x52: /* AAC profile, Level 4, BR 256 kBit/s */
-			stream_quality->audio_preference += 0x80; 
+			stream_quality->audio_preference += 0x80;
 			break;
 		case 0x51: /* AAC profile, Level 2, BR 128 kBit/s */
-			stream_quality->audio_preference += 0x70; 
+			stream_quality->audio_preference += 0x70;
 			break;
 		case 0x60: /* HE-AACv2, Level 2 (Radio Tehran) */
 			stream_quality->audio_preference += 0x20;
@@ -370,7 +370,7 @@ static void add_payload_from_pmt(audio_quality_t * stream_quality, unsigned char
 		case STREAM_MODE_AACP:	
 		case STREAM_MODE_AC3:
 			audio_all_checks = AUDIO_STREAM;
-			global_state->stream_type = stream_quality->stream_type; 
+			global_state->stream_type = stream_quality->stream_type;
 			break;
 		case STREAM_MODE_RDS:
 			audio_all_checks = RDS_STREAM;
@@ -379,7 +379,7 @@ static void add_payload_from_pmt(audio_quality_t * stream_quality, unsigned char
 			audio_all_checks = DSMCC_STREAM;
 			break;
 		default:
-			output_logmessage("add_payload_from_pmt(): Programm error, no valid stream-type given (%d)\n", stream_quality->stream_type); 
+			output_logmessage("add_payload_from_pmt(): Programm error, no valid stream-type given (%d)\n", stream_quality->stream_type);
 			return;
 			break;
 	}
@@ -432,7 +432,6 @@ static void add_payload_from_pmt(audio_quality_t * stream_quality, unsigned char
 		output_logmessage("add_payload_from_pmt(): Found %s audio stream in PID %d (service_id %d)\n", stream_quality->stream_type_name, PMT_PID(stream_quality->ptr), global_state->service_id);
 		add_channel(CHANNEL_TYPE_PAYLOAD, PMT_PID(stream_quality->ptr));
 	} else if ( audio_all_checks == RDS_STREAM ) {
-		global_state->service_id = PMT_PROGRAM_NUMBER(start);
 		if ( global_state->prefer_rds > 0) {
 			output_logmessage("add_payload_from_pmt(): Found RDS data stream in PID %d\n", PMT_PID(stream_quality->ptr));
 			add_channel(CHANNEL_TYPE_RDS, PMT_PID(stream_quality->ptr));
@@ -440,7 +439,6 @@ static void add_payload_from_pmt(audio_quality_t * stream_quality, unsigned char
 			output_logmessage("add_payload_from_pmt(): Ignoring RDS data stream in PID %d, RDS disabled by configuration\n", PMT_PID(stream_quality->ptr));
 		}
 	} else if ( audio_all_checks == DSMCC_STREAM ) {
-		global_state->service_id = PMT_PROGRAM_NUMBER(start);
 		output_logmessage("add_payload_from_pmt(): Found DSM-CC data stream in PID %d\n", PMT_PID(stream_quality->ptr));
 		add_channel(CHANNEL_TYPE_DSMCC, PMT_PID(stream_quality->ptr));
 	}
@@ -453,9 +451,9 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	unsigned char* start = NULL;
 	uint8_t found_streams_counter = 0;
 	uint8_t i = 0;
-	uint32_t section_length = 0; 
+	uint32_t section_length = 0;
 	uint32_t current_offset = 9; /* Size of PMT "header" */
-	uint32_t best_quality = 0; 
+	uint32_t best_quality = 0;
 	audio_quality_t* quality[10]; /* Maximum of 10 streams possible */
 		
 	/* Only check for possible streaming payload in PMT if not one is added yet */
@@ -472,7 +470,7 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 		PMT_LAST_SECTION_NUMBER(start),
 		PMT_PROGRAMME_INFO_LENGTH(start));
 #endif
-	section_length = PMT_SECTION_LENGTH(start); 
+	section_length = PMT_SECTION_LENGTH(start);
 	/* Look into table 0x02 containing the PID to be read */
 	if ( PMT_TABLE_ID(start) == 2) {
 		/* Check crc32 to avoid checking it later on */
@@ -492,20 +490,20 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 		}
 		if ( found_streams_counter > 0) {
 			found_streams_counter -= 1;
-		} 
+		}
 		/* Search for best audio */
 		for (i = 0; i < found_streams_counter; i++) {
 #ifdef DEBUG
-			fprintf(stderr, "Found Stream in Mode %d with Preference %d as number %d\n", quality[i]->stream_type, quality[i]->audio_preference, i); 
+			fprintf(stderr, "Found Stream in Mode %d with Preference %d as number %d\n", quality[i]->stream_type, quality[i]->audio_preference, i);
 #endif
 
 			if (quality[i]->audio_preference > best_quality) {
-				best_quality = quality[i]->audio_preference ; 
+				best_quality = quality[i]->audio_preference ;
 			}
 		}
 		/* Search for Audio in best quality */
 		for (i = 0; i < found_streams_counter; i++) {
-			if (quality[i]->stream_type != STREAM_MODE_NONE 
+			if (quality[i]->stream_type != STREAM_MODE_NONE
 				&& quality[i]->stream_type != STREAM_MODE_RDS
 				&& quality[i]->stream_type != STREAM_MODE_DSMCC
 				&& quality[i]->audio_preference == best_quality) {
@@ -594,7 +592,8 @@ uint8_t collect_continuation(section_aggregate_t* aggregation, unsigned char *pe
 	unsigned char* start = pes_ptr + start_of_pes;
 
 	/* We are currently aggregating mpeg packets for a continuated frame? */
- 	if (aggregation->buffer_valid == 0 && aggregation->continuation > 0 ) { // && (TS_PACKET_PAYLOAD_START(ts_full_frame) == 0) )  {
+	if ( aggregation->buffer_valid == 0
+		 && aggregation->continuation > 0 ) { // && (TS_PACKET_PAYLOAD_START(ts_full_frame) == 0) )  {
 		/* yes */
 #ifdef DEBUG
 		fprintf(stderr, "%s: continued frame: offset: %d, counter: %d, section_length: %d, payload_start: %d (Pointer: %d)\n",
@@ -605,8 +604,9 @@ uint8_t collect_continuation(section_aggregate_t* aggregation, unsigned char *pe
 		memcpy(aggregation->buffer + aggregation->offset, start, TS_PACKET_SIZE - TS_HEADER_SIZE - start_of_pes);
 		aggregation->offset += TS_PACKET_SIZE - TS_HEADER_SIZE - start_of_pes; /* Offset for next TS packet */
 		aggregation->counter += 1;
-		/* 4 = size of crc32 (not included in section length) */
-		if ((aggregation->offset - TS_HEADER_SIZE - start_of_pes - 4) >= aggregation->section_length ) {
+		/* 4 = size of crc32 (not included in section length).
+		   header size must be not substracted, because it was substracted above */
+		if ((aggregation->offset - start_of_pes - 4) >= aggregation->section_length) {
 			/* Section is finished, finally */
 			aggregation->buffer_valid = 1;
 			aggregation->continuation = 0;
@@ -614,7 +614,20 @@ uint8_t collect_continuation(section_aggregate_t* aggregation, unsigned char *pe
 			fprintf(stderr, "%s: finished multi-frame table after offset %d, counter: %d\n",
 				channel_name(type), aggregation->offset, aggregation->counter);
 #endif
+			/* NEW TODO */
 			/* Check wether there is some leftover */
+			if ( start_of_pes) {
+				if ( TS_PACKET_POINTER(ts_full_frame) < ( TS_PACKET_SIZE - 5 ) ) {
+					aggregation->ob_used = TS_PACKET_SIZE - TS_PACKET_POINTER(ts_full_frame) - 5;
+					memcpy(aggregation->offset_buffer, start + TS_PACKET_POINTER(ts_full_frame), TS_PACKET_SIZE - TS_PACKET_POINTER(ts_full_frame) - 5);
+#ifdef DEBUG
+					fprintf(stderr, "Leftover in continued frame ....\n");
+					DumpHex(aggregation->offset_buffer, aggregation->ob_used);
+#endif
+				}
+			}
+			/* END NEW */
+#if 0
 			aggregation->ob_used = aggregation->offset - aggregation->section_length;
 			/* Stuffing bytes, or size wrong? */
 			if ((start[TS_PACKET_SIZE - aggregation->ob_used + 3] == 0xff && start[TS_PACKET_SIZE - aggregation->ob_used + 4] == 0xff)
@@ -635,9 +648,10 @@ uint8_t collect_continuation(section_aggregate_t* aggregation, unsigned char *pe
 				DumpHex(aggregation->offset_buffer, aggregation->ob_used);
 	#endif
 			}
+#endif
 			return 1;
 		} else {
-			if ( TS_PACKET_PAYLOAD_START(ts_full_frame) == 1) {
+			if ( start_of_pes ) {
 			#ifdef DEBUG
 				fprintf(stderr, "%s: I'm at offset %d, and a new payload start is there... interrupting\n", channel_name(type), aggregation->offset);
 			#endif
@@ -673,28 +687,51 @@ uint8_t collect_continuation(section_aggregate_t* aggregation, unsigned char *pe
 	if ( aggregation->buffer_valid == 0) {
 		/* Check wether we have a *valid* leftover from last TS packet */
 		if ( aggregation->continuation == 0 ) {
-			if (aggregation->ob_used > 5) {
+			if (aggregation->ob_used > 0) {
 				uint8_t size = 0;
 				/* special operation */
-				/* Just assume that this frame is longer then an mpeg frame ... */
-				aggregation->continuation = 1;
-				aggregation->counter = 1;
-				aggregation->section_length = EIT_SECTION_LENGTH(aggregation->offset_buffer);
-				aggregation->offset = aggregation->ob_used;
-				memcpy(aggregation->buffer, aggregation->offset_buffer, aggregation->ob_used);
-				aggregation->ob_used = 0;
-				/* Copy the rest of the mpeg frame */
-				memcpy(aggregation->buffer + aggregation->offset, pes_ptr + start_of_pes, TS_PACKET_SIZE - TS_HEADER_SIZE - start_of_pes );
-				aggregation->offset += TS_PACKET_SIZE - TS_HEADER_SIZE - start_of_pes;
-
-				#ifdef DEBUG
-					fprintf (stderr, "%s: Found continued multi-frame-table from last frame 0x%2.2x (data %d byte), Section-Length: %d, Section: %d\n",
-				channel_name(type), EIT_PACKET_TABLEID(start), aggregation->offset, EIT_SECTION_LENGTH(aggregation->buffer),
-				EIT_SECTION_NUMBER(aggregation->buffer));
-				DumpHex(aggregation->buffer, aggregation->offset);
-				#endif
-				/* Returns 0 on valid frame, 1 on success */
-				return fetch_next(aggregation, NULL, &size);
+				if (! start_of_pes ) {
+					aggregation->continuation = 1;
+					aggregation->counter = 1;
+					aggregation->section_length = EIT_SECTION_LENGTH(aggregation->offset_buffer);
+					aggregation->offset = aggregation->ob_used;
+					memcpy(aggregation->buffer, aggregation->offset_buffer, aggregation->ob_used);
+					aggregation->ob_used = 0;
+					/* Copy the rest of the mpeg frame */
+					memcpy(aggregation->buffer + aggregation->offset, pes_ptr + start_of_pes, TS_PACKET_SIZE - TS_HEADER_SIZE - start_of_pes );
+					aggregation->offset += TS_PACKET_SIZE - TS_HEADER_SIZE - start_of_pes;
+					#ifdef DEBUG
+						fprintf (stderr, "%s: Found continued multi-frame-table from last frame 0x%2.2x (data %d byte), Section-Length: %d, Section: %d\n",
+							     channel_name(type), EIT_PACKET_TABLEID(start), aggregation->offset, EIT_SECTION_LENGTH(aggregation->buffer),
+							     EIT_SECTION_NUMBER(aggregation->buffer));
+						DumpHex(aggregation->buffer, aggregation->offset);
+					#endif
+					/* Returns 0 on valid frame, 1 on success */
+					return fetch_next(aggregation, NULL, &size);
+				} else {
+					/* This is a *short* frame again with leftover */
+					aggregation->continuation = 0;
+					aggregation->buffer_valid = 1;
+					aggregation->counter = 1;
+					aggregation->section_length = EIT_SECTION_LENGTH(aggregation->offset_buffer);
+					aggregation->offset = aggregation->ob_used;
+					memcpy(aggregation->buffer, aggregation->offset_buffer, aggregation->ob_used);
+					/* Copy the rest of the mpeg frame */
+					memcpy(aggregation->buffer + aggregation->offset, pes_ptr + start_of_pes, TS_PACKET_SIZE - TS_HEADER_SIZE - start_of_pes );
+					aggregation->offset += TS_PACKET_SIZE - TS_HEADER_SIZE - start_of_pes;
+					#ifdef DEBUG
+					fprintf (stderr, "collect_continuation(): FIXED BUG we are using leftover from last frame and have a leftover again\n");
+					#endif
+					if ( TS_PACKET_POINTER(ts_full_frame) < ( TS_PACKET_SIZE - 5 ) ) {
+						aggregation->ob_used = TS_PACKET_SIZE - TS_PACKET_POINTER(ts_full_frame) - 5;
+						memcpy(aggregation->offset_buffer, start + TS_PACKET_POINTER(ts_full_frame), TS_PACKET_SIZE - TS_PACKET_POINTER(ts_full_frame) - 5);
+#ifdef DEBUG
+						fprintf(stderr, "Leftover in continued frame ....\n");
+						DumpHex(aggregation->offset_buffer, aggregation->ob_used);
+#endif
+					}
+					return 1;
+				}
 			}
 		}
 		/* A short EIT frame < TS_PACKET_SIZE length, take care of the crc32 (not included in section_length)! */
@@ -771,9 +808,7 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	if (global_state->sdt_fromstream == 0) {
 #endif
 		if (dvb_crc32(start, sdt_table->section_length + 3) != 0) {
-		#ifdef DEBUG
 			output_logmessage("SDT: crc32 does not match, calculated %d, expected 0\n", dvb_crc32(start, sdt_table->section_length + 3));
-		#endif
 		} else {
 			if ( PMT_TABLE_ID(start) == 0x42 ) {
 				/* Table 0x42 contains information about current stream, we only want programm "running" (see mpeg standard for this hardcoded stuff) */
@@ -796,7 +831,7 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 					} else {
 						if ( SDT_DESCRIPTOR_SERVICE_ID(description_offset) != global_state->service_id ) {
 #ifdef DEBUG
-							fprintf(stderr, "SDT: SDT skipping service %d, because not matching for wanted sevice_id %d\n", 
+							fprintf(stderr, "SDT: SDT skipping service %d, because not matching for wanted sevice_id %d\n",
 								SDT_DESCRIPTOR_SERVICE_ID(description_offset), global_state->service_id );
 #endif
 							description_offset = description_offset + SDT_DESCRIPTOR_LOOP_LENGTH(description_offset) + 5;
@@ -843,7 +878,7 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 									utf8((unsigned char*)service_name, utf8_service_name);
 								}
 								if (SDT_DC_SERVICE_TYPE(description_content) == 0x1f) {
-									output_logmessage("SDT: Warning: Stream (also) contains service HEVC HDTV (%s)\n", utf8_service_name); 
+									output_logmessage("SDT: Warning: Stream (also) contains service HEVC HDTV (%s)\n", utf8_service_name);
 								} else if (SDT_DC_SERVICE_TYPE(description_content) != 0xff) {
 									output_logmessage("SDT: Warning: Stream (also) contains unkown service with id 0x%2x (%s)\n", SDT_DC_SERVICE_TYPE(description_content), utf8_service_name);
 								}
@@ -881,14 +916,9 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 		return;
 	}
 	start = eit_table->buffer;
-	if (eit_table->buffer_valid) {
-		#ifdef DEBUG
-			fprintf(stderr, "EIT: crc32 %s (%d, l: %d)\n",(  dvb_crc32(start, EIT_SECTION_LENGTH(start)+3)== 0?"OK":"FAIL"), dvb_crc32(start, EIT_SECTION_LENGTH(start)+3), EIT_SECTION_LENGTH(start)+3);
-			DumpHex(start, EIT_SECTION_LENGTH(start));
-		#endif
-	}
 	if (dvb_crc32(start, EIT_SECTION_LENGTH(start)+3)!= 0) {
 		/* crc32 not valid, throw away continued data */
+		output_logmessage("EIT: crc32() not valid (0, %d)\n", dvb_crc32(start, EIT_SECTION_LENGTH(start)+3));
 		eit_table->ob_used = 0;
 		eit_table->buffer_valid = 0;
 		return; 	
@@ -937,7 +967,7 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 			uint16_t max_size = EIT_EVENT_LOOPLENGTH(event_start);
 			unsigned int stringlen = 0;
 			unsigned char* text1_start = NULL;
-			enum_charset text_charset; 
+			enum_charset text_charset;
 			int text1_len = 0;
 			uint8_t * tmp = EIT_NAME_CONTENT(description_start);
 			/* The same charset issue as with the SDT */
@@ -1027,6 +1057,8 @@ static void extract_rds_payload( unsigned char *pes_ptr, size_t pes_len, ts2shou
 	if ( start_of_pes ) {
 		/* Parse and remove PES header */
 		es_ptr = parse_pes( pes_ptr, pes_len, &es_len, chan );
+	} else {
+		// DumpHex(pes_ptr, pes_len);
 	}
 	if ((es_len - 2) > 0) {
 		rds_convert_from_extra_pes(es_ptr + 1, es_len - 2);
@@ -1046,6 +1078,10 @@ static void extract_dsmcc_payload( unsigned char *pes_ptr, size_t pes_len, ts2sh
     start = dsmcc_table->buffer;
     if (dvb_crc32(start, EIT_SECTION_LENGTH(start)+3)!= 0) {
         /* crc32 not valid, throw away continued data */
+#ifdef DEBUG
+		fprintf(stderr, "DSMCC: crc32 %s (%d, l: %d)\n",(  dvb_crc32(start, EIT_SECTION_LENGTH(start)+3)== 0?"OK":"FAIL"), dvb_crc32(start, EIT_SECTION_LENGTH(start)+3), EIT_SECTION_LENGTH(start)+3);
+		DumpHex(start, EIT_SECTION_LENGTH(start));
+#endif
         dsmcc_table->ob_used = 0;
         dsmcc_table->buffer_valid = 0;
         return;
@@ -1056,8 +1092,8 @@ static void extract_dsmcc_payload( unsigned char *pes_ptr, size_t pes_len, ts2sh
 		// DumpHex(start, EIT_SECTION_LENGTH(start));
 #endif
 		handle_dsmcc_message(start, dsmcc_table->section_length);
-		dsmcc_table->buffer_valid = 0;
     }
+	dsmcc_table->buffer_valid = 0;
 	return;
 }
 
@@ -1070,7 +1106,7 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 	size_t es_len=0;
 
 	int32_t bytes_written = 0;
-	// static uint32_t pes_framesize = 0; 
+	// static uint32_t pes_framesize = 0;
 
 	/* Start of audio block / PES? */
 	if ( start_of_pes ) {
@@ -1094,7 +1130,7 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 	}
 	// Subtract the amount remaining in current PES packet
 	chan->pes_remaining -= es_len;
-#if 0 
+#if 0
 		fprintf(stderr, "extract_pes_payload after substraction of current frame: Frame#%lu, chan->pes_remaining = %ld\n", frame_count, chan->pes_remaining);
 #endif
 	// Got some data to write out?
@@ -1104,7 +1140,7 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 		while (!chan->synced && es_len>= 6) {
 			// Valid header?
 			// MPEG1/2
-			// fprintf(stderr, "Searching for stream start, Offset %d, Pointer %d, Bytes 0x%x, 0x%x\n", es_len, es_ptr, es_ptr[0], es_ptr[1]); 
+			// fprintf(stderr, "Searching for stream start, Offset %d, Pointer %d, Bytes 0x%x, 0x%x\n", es_len, es_ptr, es_ptr[0], es_ptr[1]);
 
 			if (chan->pes_stream_id >= 0xc0) {
 				if (mpa_header_parse(es_ptr, &chan->mpah)) {
@@ -1163,7 +1199,7 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 	}
 	// every time the buffer is full scan for RDS data.
 	// This is MPEG audio only
-	if (chan->buf_used > chan->payload_size 
+	if (chan->buf_used > chan->payload_size
 		&& global_state->output_payload
 		&& ( global_state->stream_type == STREAM_MODE_MPEG ) ) {
 		rds_data_scan(chan);
@@ -1550,7 +1586,7 @@ int16_t process_ts_packet( unsigned char * buf )
 		return TS_HARD_ERROR;
 	}
 /* DEBUG possibility
-	fprintf(stderr, "ts-frame number #%d\n", frame_count); 
+	fprintf(stderr, "ts-frame number #%d\n", frame_count);
 */
 	// Get the PID of this TS packet
 	pid = TS_PACKET_PID(buf);
@@ -1585,7 +1621,7 @@ int16_t process_ts_packet( unsigned char * buf )
 		// Adaptation field AND payload
 #ifdef DEBUG
 		output_logmessage("process_ts_packet: Adaption field with length %d found in frame #%d\n", TS_PACKET_ADAPT_LEN(buf), frame_count);
-#endif 
+#endif
 		/* Update PCR? Only main audio stream */
 		if ( TS_PACKET_ADAPT_PCR(buf) ) {
 			if (channel_map[pid] && channel_map[pid]->channel_type == CHANNEL_TYPE_PAYLOAD) {
