@@ -278,6 +278,7 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 	stream_quality->ptr = pmt_stream_info_offset;
 	/* We have to scan the descriptors for AC-3, AAC and RDS informations */
 	uint8_t rds_ok = 0;
+	uint8_t dsmcc_ok = 0;
 	{
 		int32_t offset = 0;
 #ifdef DEBUG
@@ -316,6 +317,15 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 				}
 				/* length = 1, content = 0x32 */
 			}
+			if ( DESCRIPTOR_TAG(descriptor_pointer) == 0x66) {
+				if (descriptor_pointer[1] == 2) {
+					uint16_t data_broadcast_descriptor = descriptor_pointer[2]<<8 | descriptor_pointer[3];
+					if ( data_broadcast_descriptor == 0x123) {
+						/* HBBTV carousel */
+						dsmcc_ok = 1;
+					}
+				}
+			}
 		}
 	}
 	/* Correct the entries in the created struct */
@@ -326,6 +336,16 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 			fprintf(stderr, "analyze_stream_from_pmt(): RDS Stream found\n");
 #endif
 			stream_quality->stream_type = STREAM_MODE_RDS;
+		} else {
+			stream_quality->stream_type = STREAM_MODE_NONE;
+		}
+	}
+	if ( audio_all_checks == DSMCC_STREAM ) {
+		if (dsmcc_ok == 1) {
+#ifdef DEBUG
+			fprintf(stderr, "analyze_stream_from_pmt(): HBBTV DSMCC Stream found\n");
+#endif
+			stream_quality->stream_type = STREAM_MODE_DSMCC;
 		} else {
 			stream_quality->stream_type = STREAM_MODE_NONE;
 		}
