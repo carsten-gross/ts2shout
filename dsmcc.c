@@ -18,7 +18,7 @@
 	You should have received a copy of the GNU General Public License
 	along with this program; if not, write to the Free Software
 	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-   
+
 */
 
 #include <string.h>
@@ -53,6 +53,7 @@ void cleanup_download_data_block(module_buffer_t* single_module_buffer, uint16_t
 	}
 	if (single_module_buffer->buffer[block_nr] != NULL) {
 		free(single_module_buffer->buffer[block_nr]);
+		single_module_buffer->buffer[block_nr] = NULL;
 	}
 	single_module_buffer->block_size[block_nr] = 0;
 	single_module_buffer->valid = 0;
@@ -100,10 +101,15 @@ void handle_download_data_block(unsigned char *buf, size_t len) {
 }
 
 /* Decode BIOP Files
- * See ETSI TR 101 202 V1.2.1 */
-void biop_file_message(unsigned char *buffer, size_t length) {
-	// uint32_t message_size;
-	uint32_t content_length; 
+ * See ETSI TR 101 202 V1.2.1
+ * buffer = pointer to first byte in module buffer
+ * offset = initially 0, increment to next BIOP header if wanted for subsequent calls *
+ * lenght = module length given in DSM-CC frame header
+ * module_nr = module number
+*/
+uint32_t biop_file_message(unsigned char *buffer, size_t offset, size_t length, uint16_t module_nr) {
+	uint32_t message_size;
+	uint32_t content_length;
 	uint8_t	 object_key_length;
 	unsigned char * object_key;
 	unsigned char * current_pos;
@@ -113,34 +119,53 @@ void biop_file_message(unsigned char *buffer, size_t length) {
 	uint8_t i = 0;
 	uint8_t j = 0;
 	char filename[255];
-	FILE *f; 
-	if (buffer == NULL) {
-		return;
+	FILE *f;
+	/* avoid wrong usage / crashes */
+	if (length < 28 || offset > ( length - 28) ) {
+		assert(length >= 28);
+		assert(offset < ( length - 28));
+		return 0;
 	}
-	if (buffer[0] == 'B' && buffer[1] == 'I' && buffer[2] == 'O' && buffer[3] == 'P') {
+	if (buffer == NULL) {
+		return 0;
+	}
+	current_pos = buffer + offset;
+#if 0
+	if (module_nr == 1 && offset > 0) {
+		fprintf(stderr, "----- OFFSET %ld -----\n", offset);
+		DumpHex(current_pos, 64);
+	}
+#endif
+	if (current_pos[0] == 'B' && current_pos[1] == 'I' && current_pos[2] == 'O' && current_pos[3] == 'P') {
 		/* MAGIC "BIOP" found */
 	} else {
-		return;
+		return 0;
 	}
 	/* BIOP Version */
-	if (buffer[4] == 1 && buffer[5] == 0 && buffer[6] == 0 && buffer[7] == 0) {
+	if (current_pos[4] == 1 && current_pos[5] == 0 && current_pos[6] == 0 && current_pos[7] == 0) {
 		/* Version, endianess and message type correct */
 	} else {
-		return;
+		return 0;
 	}
-	// message_size = ((uint32_t)(buffer[8]<<24 | buffer[9]<<16 | buffer[10]<<8 | buffer[11]));
-	object_key_length = buffer[12];
-	object_key = buffer + 13;
-	current_pos = buffer + 13 + object_key_length;
+	message_size = ((uint32_t)(current_pos[8]<<24 | current_pos[9]<<16 | current_pos[10]<<8 | current_pos[11]));
+	object_key_length = current_pos[12];
+	object_key = current_pos + 13;
+	current_pos = current_pos + 13 + object_key_length;
 #ifdef DEBUG
-	fprintf(stderr, "Expect 0x000004, 'fil '\n"); 
-	DumpHex(current_pos, 8); 
+	fprintf(stderr, "Expect 0x000004, 'fil '\n");
+	DumpHex(current_pos, 8);
 #endif
-	if (   current_pos[0] == 0 && current_pos[1] == 0 && current_pos[2] == 0 && current_pos[3] == 4 
+	if (   current_pos[0] == 0 && current_pos[1] == 0 && current_pos[2] == 0 && current_pos[3] == 4
 		&& current_pos[4] == 'f' && current_pos[5] == 'i' && current_pos[6] == 'l' && current_pos[7] == 0) {
+#ifdef DEBUG
+		fprintf(stderr, "Module: 0x%x (size %ld), typ fil found, processing: %ld\n", module_nr, length, offset + message_size + 12);
+#endif
 		/* Found fil */
 	} else {
-		return;
+#ifdef DEBUG
+		fprintf(stderr, "Module: 0x%x (size %ld), typ %c%c%c found, jumping to: %ld\n", module_nr, length, current_pos[4], current_pos[5], current_pos[6], offset + message_size + 12);
+#endif
+		return message_size + 12;
 	}
 	/* Jump over 4 'fil\0' */
 	current_pos = current_pos + 8;
@@ -153,42 +178,44 @@ void biop_file_message(unsigned char *buffer, size_t length) {
 		current_pos = current_pos + 4; /* Skip context id */
 		context_data_length = current_pos[0] <<8 | current_pos[1];
 		for (j = 0; j < context_data_length; j++) {
-			current_pos++; 
+			current_pos++;
 		}
 	}
 	current_pos += 4;
 	content_length = ((uint32_t)(current_pos[0]<<24 | current_pos[1]<<16 | current_pos[2]<<8 |current_pos[3]));
 	current_pos = current_pos + 4;
-	snprintf(filename, 255, CACHE_DIRECTORY "/0x%02x%02x%02x.data", object_key[0], object_key[1], object_key[2]);
+	snprintf(filename, 255, CACHE_DIRECTORY "/0x%02x%02x%02x-%x.data", object_key[0], object_key[1], object_key[2], dvb_crc32(current_pos, content_length));
 #ifdef DEBUG
-	fprintf(stderr, "check_module_complete(): BIOP File, writing to %s!\n", filename);
+	fprintf(stderr, "biop_file_message(): Module 0x%x, Offset %ld, BIOP File, writing to %s\n", module_nr, offset, filename);
 #endif
 	f = fopen(filename, "w");
 	if (! f) {
 		/* No code beauty contest here, error is handled elsewhere */
 		perror("biop_file_message(): fopen()");
-		return;
+		return message_size + 12;
 	}
-	fwrite( current_pos, 1, content_length, f); 
+	fwrite( current_pos, 1, content_length, f);
 	fclose(f);
-	return;
+	return message_size + 12;
 }	
 
 void check_module_complete(module_buffer_t* single_module_buffer) {
 	uint16_t i = 0;
+	// uint16_t module_nr = 0;
 	size_t	length = 0;
 	char filename[255];
 	int z_result;
 	FILE *f;
-	static uint8_t message_printed = 0; 
+	static uint8_t message_printed = 0;
+	uint32_t message_offset = 0;
 	if (single_module_buffer == NULL) {
 		return;
 	}
+	// module_nr = single_module_buffer->module_number;
 	for (i = 0; i < MAX_BLOCKNR; i++) {
 		length += single_module_buffer->block_size[i];
 	}
 	if (length != single_module_buffer->data_size) {
-		// fprintf(stderr, "check_module_complete(): lenght %ld != single_module_buffer->data_size %ld\n", length, single_module_buffer->data_size); 
 		return;
 	}
 	/* Write to disk for the time being */
@@ -196,56 +223,56 @@ void check_module_complete(module_buffer_t* single_module_buffer) {
 	unsigned char * compressed_data;
 	unsigned char * current_pos;
 	unsigned char * uncompressed_data;
-	char info[15]; 
+	char info[15];
 	size_t uncompressed_length = 10 * length; /* Assume factor 10 (3 and 5 are not sufficient) */
-	size_t current_length = 0;  
+	size_t current_length = 0;
 	compressed_data = alloca(length + 1);  /* use stack */
-	current_pos = compressed_data; 
-	uncompressed_data = alloca(uncompressed_length + 1); 
+	current_pos = compressed_data;
+	uncompressed_data = alloca(uncompressed_length + 1);
 	/* Try to uncompress */
 	for (i = 0; i < MAX_BLOCKNR; i++) {
 		if (single_module_buffer->block_size[i] > 0) {
-			if ( single_module_buffer->module_number == 1) {
-#ifdef DEBUG
-				fprintf(stderr, "Module 1, Block-Nr %d, Size: %d\n", i, single_module_buffer->block_size[i]);
-#endif 
-			}
 			memcpy(current_pos, single_module_buffer->buffer[i], single_module_buffer->block_size[i]);
 			current_pos += single_module_buffer->block_size[i];
 		} else {
-			continue; 
+			continue;
 		}
 	}
 	z_result = uncompress(uncompressed_data, &uncompressed_length, compressed_data, length);
 	if (z_result == Z_OK) {
-		snprintf(info, 14, "-unzipped"); 
-		current_pos = uncompressed_data; 
-		current_length = uncompressed_length; 
+		snprintf(info, 14, "-unzipped");
+		current_pos = uncompressed_data;
+		current_length = uncompressed_length;
 	} else {
 		// fprintf(stderr, "Cannot uncompress module 0x%x: %d\n", single_module_buffer->module_number, z_result);
 		strcpy(info, "");
-		current_pos = compressed_data; 
-		current_length = length; 
+		current_pos = compressed_data;
+		current_length = length;
 	}
 	snprintf(filename, 255, CACHE_DIRECTORY "/0x%x%s.bin", single_module_buffer->module_number, info);
 #ifdef DEBUG
 	fprintf(stderr, "check_module_complete(): Module 0x%x complete, writing to %s!\n", single_module_buffer->module_number, filename);
 #endif
-	f = fopen(filename, "w"); 
+	f = fopen(filename, "w");
 	if (! f) {
 		if (! message_printed) {
-			output_logmessage("Write problem in " CACHE_DIRECTORY ". This message will only be logged once\n"); 
+			output_logmessage("Write problem in " CACHE_DIRECTORY ". This message will only be logged once\n");
 			output_logmessage("fopen file `%s' for writing in check_module_complete(): %s\n", filename, strerror(errno));
 			message_printed = 1;
 		}
-		cleanup_download_module_buffer(single_module_buffer); 
+		cleanup_download_module_buffer(single_module_buffer);
 		return;
 	}
-	fwrite( current_pos, 1, current_length, f); 
+	fwrite( current_pos, 1, current_length, f);
 	fclose(f);
-	biop_file_message(current_pos, current_length); 
-	cleanup_download_module_buffer(single_module_buffer); 
-	return; 
+	message_offset = biop_file_message(current_pos, 0, current_length, single_module_buffer->module_number);
+	while ( message_offset > 0 && message_offset < ( current_length - 28)  ) {
+		size_t new_offset;
+		new_offset = biop_file_message(current_pos, message_offset, current_length, single_module_buffer->module_number);
+		message_offset = message_offset + new_offset;
+	}
+	cleanup_download_module_buffer(single_module_buffer);
+	return;
 }
 
 
@@ -267,12 +294,12 @@ void handle_server_initate(unsigned char *buf, size_t len) {
 	}
 	module_count = DSMCC_DII_MODULE_COUNT(buf);
 	//fprintf(stderr, "handle_server_initate(): transaction_id 0x%x, message_id 0x%x, module_count 0x%x\n", transaction_id, message_id, module_count);
-	current_module = DSMCC_DII_MODULES_START(buf); 
+	current_module = DSMCC_DII_MODULES_START(buf);
 
 	for (i = 0; i < module_count; i++) {
-		uint16_t module_nr; 
+		uint16_t module_nr;
 #ifdef DEBUG
-		fprintf(stderr, "Module_id  0x%x, Module size %d, Module_version 0x%x, module info_length %d\n", 
+		fprintf(stderr, "Module_id  0x%x, Module size %d, Module_version 0x%x, module info_length %d\n",
 			    DSMCC_MODULE_MODULE_ID(current_module),
 				DSMCC_MODULE_MODULE_SIZE(current_module),
 				DSMCC_MODULE_MODULE_VERSION(current_module),
@@ -282,10 +309,10 @@ void handle_server_initate(unsigned char *buf, size_t len) {
 		/* Spec says that a list of descriptors follows in length DSMCC_MODULE_INFO_LENGTH(current_module) */
 		if (module_buffer[module_nr]) {
 			module_buffer[module_nr]->data_size = DSMCC_MODULE_MODULE_SIZE(current_module);
-			check_module_complete(module_buffer[module_nr]); 
+			check_module_complete(module_buffer[module_nr]);
 		}
 		current_module = current_module + DSMCC_MODULE_INFO_LENGTH(current_module) + 8;
-		j += DSMCC_MODULE_INFO_LENGTH(current_module); 
+		j += DSMCC_MODULE_INFO_LENGTH(current_module);
 		if ( j > len) {
 			output_logmessage("handle_server_initate(): invalid MPEG Frame, j (%d) > len (%d)\n", j, len);
 			return;
