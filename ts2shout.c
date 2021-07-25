@@ -936,10 +936,12 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 		return;
 	}
 	start = eit_table->buffer;
+#ifdef DEBUG
+	fprintf(stderr, "EIT: crc32 %s (%d, l: %d)\n",(  dvb_crc32(start, EIT_SECTION_LENGTH(start)+3)== 0?"OK":"FAIL"), dvb_crc32(start, EIT_SECTION_LENGTH(start)+3), EIT_SECTION_LENGTH(start)+3);
+#endif
 	if (dvb_crc32(start, EIT_SECTION_LENGTH(start)+3)!= 0) {
-		/* crc32 not valid, throw away continued data */
-		output_logmessage("EIT: crc32() not valid (0, %d)\n", dvb_crc32(start, EIT_SECTION_LENGTH(start)+3));
-		eit_table->ob_used = 0;
+		/* crc32 not valid, throw away buffer */
+		// eit_table->ob_used = 0;
 		eit_table->buffer_valid = 0;
 		return; 	
 	}
@@ -1640,7 +1642,7 @@ int16_t process_ts_packet( unsigned char * buf )
 	} else if (TS_PACKET_ADAPTATION(buf)==0x3) {
 		// Adaptation field AND payload
 #ifdef DEBUG
-		output_logmessage("process_ts_packet: Adaption field with length %d found in frame #%d\n", TS_PACKET_ADAPT_LEN(buf), frame_count);
+		fprintf(stderr, "process_ts_packet: Adaption field with length %d found in frame #%ld\n", TS_PACKET_ADAPT_LEN(buf), frame_count);
 #endif
 		/* Update PCR? Only main audio stream */
 		if ( TS_PACKET_ADAPT_PCR(buf) ) {
