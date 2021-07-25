@@ -634,8 +634,7 @@ uint8_t collect_continuation(section_aggregate_t* aggregation, unsigned char *pe
 			fprintf(stderr, "%s: finished multi-frame table after offset %d, counter: %d\n",
 				channel_name(type), aggregation->offset, aggregation->counter);
 #endif
-			/* NEW TODO */
-			/* Check wether there is some leftover */
+			/* New, better code: Check whether there is some leftover */
 			if ( start_of_pes) {
 				if ( TS_PACKET_POINTER(ts_full_frame) < ( TS_PACKET_SIZE - 5 ) ) {
 					aggregation->ob_used = TS_PACKET_SIZE - TS_PACKET_POINTER(ts_full_frame) - 5;
@@ -646,29 +645,6 @@ uint8_t collect_continuation(section_aggregate_t* aggregation, unsigned char *pe
 #endif
 				}
 			}
-			/* END NEW */
-#if 0
-			aggregation->ob_used = aggregation->offset - aggregation->section_length;
-			/* Stuffing bytes, or size wrong? */
-			if ((start[TS_PACKET_SIZE - aggregation->ob_used + 3] == 0xff && start[TS_PACKET_SIZE - aggregation->ob_used + 4] == 0xff)
-				|| (aggregation->ob_used > TS_PACKET_SIZE )
-			) {
-				/* nothing */
-				aggregation->ob_used = 0;
-			} else {
-				/* The 4 is the crc32 that is not mentioned in section length */
-				memcpy(aggregation->offset_buffer, start + 3 + TS_PACKET_SIZE - TS_HEADER_SIZE - start_of_pes - aggregation->ob_used, aggregation->ob_used);
-				if (aggregation->ob_used < 4) {
-					aggregation->ob_used = 0;
-				} else {
-					aggregation->ob_used -= 3;
-				}
-	#ifdef DEBUG
-				fprintf(stderr, "Leftover in continued frame ....\n");
-				DumpHex(aggregation->offset_buffer, aggregation->ob_used);
-	#endif
-			}
-#endif
 			return 1;
 		} else {
 			if ( start_of_pes ) {
