@@ -297,16 +297,19 @@ void rds_handle_message(uint8_t* rds_message, uint8_t size) {
 }
 
 /* convert exactly one frame that was given in extra PES. It's in correct order,
-   but 0xfd 00 = 0xfd, 0xfd 01 = 0xfe, 0xfd 02 = 0xff despited being superfluos */
+   but 0xfd 00 = 0xfd, 0xfd 01 = 0xfe, 0xfd 02 = 0xff despite being superfluos */
 void rds_convert_from_extra_pes(uint8_t* buffer, size_t size) {
 	static uint8_t current_pos = 0;
 	static uint8_t rds_message[255];
 	int32_t  i = 0;
-	uint8_t rds_data_size = buffer[2];
+	uint8_t rds_data_size = buffer[3 + i];
+#ifdef DEBUG
+	fprintf(stderr, "Added RDS Data from extra PES Stream\n");
+#endif
 	if (rds_data_size == 0) {
 		return;
 	}
-	for (i = 0; i < size; i++) {
+	for (; i < size; i++) {
 		uint8_t mychar = buffer[i];
 		if (mychar == 0xfd) {
             /* special marker: 0xfd 0x01 means 0xfe, 0xfd 0x02 means 0xff */
@@ -318,21 +321,11 @@ void rds_convert_from_extra_pes(uint8_t* buffer, size_t size) {
             current_pos ++;
         }
 	}
-#if 0
-#ifdef DEBUG
-	fprintf(stderr, "Added RDS Data from extra PES Stream\n");
-	DumpHex(rds_message, current_pos);
-#endif
-#endif
 	rds_handle_message(rds_message, current_pos);
 	current_pos = 0;
 	memset(rds_message, 0, 255);
 	return;
 }
-
-
-
-
 
 /* decode exactly one frame -  char * text points to 255 byte of char
  * buffer is the buffer of the mpeg-frame and offset is the current read offset

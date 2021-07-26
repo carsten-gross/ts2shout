@@ -310,7 +310,7 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 				}
 				/* RDS = length = 1, type 0x40 */
 			}
-			/* Stream identifier descriptor */
+			/* Stream identifier descriptor, we don't care about it in rds context */
 			if ( DESCRIPTOR_TAG(descriptor_pointer) == 0x52 ) {
 				if ( descriptor_pointer[2] == 0x32) {
 					rds_ok |= 2;
@@ -331,7 +331,7 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 	/* Correct the entries in the created struct */
 	/* Check for RDS OK */
 	if ( audio_all_checks == RDS_STREAM ) {
-		if (rds_ok == 3) {
+		if ((rds_ok & 1) == 1) {
 #ifdef DEBUG
 			fprintf(stderr, "analyze_stream_from_pmt(): RDS Stream found\n");
 #endif
@@ -368,9 +368,6 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 			break;
 		case 0x51: /* AAC profile, Level 2, BR 128 kBit/s */
 			stream_quality->audio_preference += 0x70;
-			break;
-		case 0x60: /* HE-AACv2, Level 2 (Radio Tehran) */
-			stream_quality->audio_preference += 0x20;
 			break;
 		default:
 			break;
@@ -593,18 +590,17 @@ uint8_t	fetch_next(section_aggregate_t* aggregation, uint8_t *buffer, uint8_t* s
 	}
 	return 1;
 }
-/*   * * *  Collect a table (SDT, EIT) out of many MPEG frames * * *
+/*   * * *  Collect data out of many MPEG frames (EIT, SDT, DSM-CC etc.) * * *
  * If an information block doesn't fit into an mpeg-ts frame it is continued in a next frame. The information is
  * directly attached after the PID (TS_HEADER_SIZE = 4 Byte offset). It is possible that there is a multi-ts-frame continuation.
- * Even worse: EIT frames are joined directly together. Even inbetween the MPEG TS frame. No stuffing bytes
+ * Even worse: Frames are joined directly together. Even inbetween the MPEG TS frame. No stuffing bytes
  * If mpeg packet says "payload start" the pointer in 4th byte tells where the table start is. This is quite burried in
  * the documentation.
- * For the time being we search for stuffing at the end of a mpeg table: stuffing bytes, then we assume the next mpeg packet starts over.
- * But we respect the pointer anyway (because our access macro is quite failsafe).
- * No stuffing bytes? We check the CRC32, if it is valid, the table is valid: The next one is attached directly.
- * TODO Currently the implementation doesn't fetch all information reliably.
- * This is an issue with mpeg ts stream provided by vdr.
- * tvheadend prepares the mpeg ts stream in another way and we have no issues with it. */
+ * In most cases all information is fetched correctly. Sometimes concated, very small EIT tables are misinterpreted and give a wrong CRC32.
+ * This is only an issue with mpeg ts stream provided by vdr.
+ * tvheadend prepares the mpeg ts stream in another way and we have no issues with it.
+ *
+ */
 
 uint8_t collect_continuation(section_aggregate_t* aggregation, unsigned char *pes_ptr, size_t pes_len, int start_of_pes, unsigned char* ts_full_frame, enum_channel_type type) {
 
