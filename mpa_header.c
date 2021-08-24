@@ -142,15 +142,12 @@ static void parse_header(const unsigned char* buf, mpa_header_t *mh, u_int32_t h
 			global_state->br = mh->bitrate;
 		}
 	} else if ( global_state->stream_type == STREAM_MODE_AACP) {
-		/* TODO UGLY AS HELL */
 		/* AAC / HE-AAC / COMPLEX / LATM/LOAS */
 		/* AAC LATM is protected with a huge amount of software patents.
 		 * Transport in mp2t is without ADTS header. In theory the parameters are
-		 * transported in PMT, but it's not documented. Therefore we match on
-		 * mp4 / aac raw frame-beginnings and reverse engineer the
-		 * parameters in PMT AAC descriptor 0x7c */
-		uint8_t bitmask = 0xfc;
-		if (buf[0] == global_state->latm_magic1 && ((buf[1] & bitmask) == (global_state->latm_magic2 & bitmask) ) ) {
+		 * transported in PMT, but it's only decodeable with a library like ffmpeg. Therefore we match on
+		 * mp4 / aac raw frame-beginnings and reverse engineer the parameters in PMT AAC descriptor 0x7c */
+		if (buf[0] == 0x56 && ((buf[1] & 0xfe) == 0xe0) ) {
 			// unsigned int profile = 0;
 #ifdef DEBUG
 			fprintf(stderr, "---------------------- HE-ACC found valid syncword ----------------------------\n");

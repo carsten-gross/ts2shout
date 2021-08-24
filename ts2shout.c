@@ -5,19 +5,19 @@
 	reworked from dvbshout.c written by
 	(C) Dave Chapman <dave@dchapman.com> 2001, 2002.
 	(C) Nicholas J Humfrey <njh@aelius.com> 2006.
-	
+
 	Copyright notice:
-	
+
 	This program is free software; you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
 	the Free Software Foundation; either version 2 of the License, or
 	(at your option) any later version.
-	
+
 	This program is distributed in the hope that it will be useful,
 	but WITHOUT ANY WARRANTY; without even the implied warranty of
 	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 	GNU General Public License for more details.
-	
+
 	You should have received a copy of the GNU General Public License
 	along with this program; if not, write to the Free Software
 	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
@@ -129,7 +129,7 @@ void output_logmessage(const char *fmt, ... ) {
 static void ts_continuity_check( ts2shout_channel_t *chan, int ts_cc )
 {
 	if (chan->continuity_count != ts_cc) {
-	
+
 		// Only display an error after we gain sync
 		if (chan->synced) {
 			output_logmessage("ts_continuity_check: TS continuity error (pid: %d)\n", chan->pid );
@@ -187,27 +187,22 @@ static void extract_pat_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
  */
 
 static void set_latm_parameters(uint8_t aac_profile) {
-	global_state->latm_magic1 = 0x56;
 	if (aac_profile == 0x51 ) {
 		global_state->sr = 48000;
 		global_state->br = 128;
-		global_state->latm_magic2 = 0xe1;
 	} else if (aac_profile == 0x52 ) {
 		global_state->sr = 48000;
 		global_state->br = 256;
-		global_state->latm_magic2 = 0xe2;
 	} else if (aac_profile == 0x60 ) {
 		global_state->sr = 48000;
 		if (global_state->br == 0) {
 			global_state->br = 48;
 		}
-		global_state->latm_magic2 = 0xe1;
 	} else {
 		global_state->sr = 48000;
 		if (global_state->br == 0) {
 			global_state->br = 128;
 		}
-		global_state->latm_magic2 = 0xe1;
 		output_logmessage("Sorry, no configuration for AAC profile (id=0x%x) found. All values guessed.\n");
 	}
 	return;
@@ -274,7 +269,7 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 			return stream_quality;
 			break;
 	}
-	/* We found a supported media or data stream */	
+	/* We found a supported media or data stream */
 	stream_quality->ptr = pmt_stream_info_offset;
 	/* We have to scan the descriptors for AC-3, AAC and RDS informations */
 	uint8_t rds_ok = 0;
@@ -384,7 +379,7 @@ static void add_payload_from_pmt(audio_quality_t * stream_quality, unsigned char
 	switch ( stream_quality->stream_type ) {
 		case STREAM_MODE_MPEG:
 		case STREAM_MODE_AAC:
-		case STREAM_MODE_AACP:	
+		case STREAM_MODE_AACP:
 		case STREAM_MODE_AC3:
 			audio_all_checks = AUDIO_STREAM;
 			global_state->stream_type = stream_quality->stream_type;
@@ -472,7 +467,7 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	uint32_t current_offset = 9; /* Size of PMT "header" */
 	uint32_t best_quality = 0;
 	audio_quality_t* quality[10]; /* Maximum of 10 streams possible */
-		
+
 	/* Only check for possible streaming payload in PMT if not one is added yet */
 	if ( global_state->payload_added) {
 		return;
@@ -482,7 +477,7 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
     fprintf (stderr, "PMT: Found data, table 0x%2.2x (Section length %d), program number %d, section %d, last section %d, INFO Length %d\n",
 		PMT_TABLE_ID(start),
 		PMT_SECTION_LENGTH(start),
-		PMT_PROGRAM_NUMBER(start),	
+		PMT_PROGRAM_NUMBER(start),
 		PMT_SECTION_NUMBER(start),
 		PMT_LAST_SECTION_NUMBER(start),
 		PMT_PROGRAMME_INFO_LENGTH(start));
@@ -527,6 +522,42 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 				/* Add audio */
 				if (! channel_map[PMT_PID(quality[i]->ptr)]) {
 					add_payload_from_pmt(quality[i], start);
+				}
+				if (quality[i]->stream_type == STREAM_MODE_AACP) {
+#ifdef FFMPEG
+					/* Prepare ffmpeg */
+					global_state->ffmpeg.pkt = av_packet_alloc();
+					/* find the MPEG audio decoder */
+					global_state->ffmpeg.codec = avcodec_find_decoder(AV_CODEC_ID_AAC_LATM);
+					if (! global_state->ffmpeg.codec) {
+						output_logmessage("ffmpeg(): Codec AV_CODEC_ID_AAC_LATM not found.\n");
+						goto end;
+					}
+					global_state->ffmpeg.parser = av_parser_init(global_state->ffmpeg.codec->id);
+					if (! global_state->ffmpeg.parser) {
+						output_logmessage("ffmpeg(): Parser for Codec not possible.\n");
+						goto end;
+					}
+					global_state->ffmpeg.c = avcodec_alloc_context3(global_state->ffmpeg.codec);
+					if (! global_state->ffmpeg.c) {
+						output_logmessage("ffmpeg(): Could not allocate audio codec context.\n");
+						goto end;
+					}
+					/* open it */
+					if (avcodec_open2(global_state->ffmpeg.c, global_state->ffmpeg.codec, NULL) < 0) {
+						output_logmessage("ffmpeg(): Could not open codec.\n");
+						goto end;
+					}
+					global_state->ffmpeg.decoded_frame = av_frame_alloc();
+					if (! global_state->ffmpeg.decoded_frame) {
+						output_logmessage("ffmpeg(): Could not allocate decoded frame.\n");
+						goto end;
+					}
+					/* Parser successfully initialized, let's go! */
+					global_state->aac_inline_rds = 1;
+					end:
+					output_logmessage("AAC inline RDS messages are %s\n", ((global_state->aac_inline_rds > 0)? "enabled" : "disabled"));
+#endif
 				}
 			}
 		}
@@ -788,7 +819,7 @@ static void extract_sdt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	fprintf (stderr, "SDT: Found data, table 0x%2.2x (Section length %d), program number %d, section %d, last section %d\n",
 		PMT_TABLE_ID(start),
 		PMT_SECTION_LENGTH(start),
-		PMT_PROGRAM_NUMBER(start),	
+		PMT_PROGRAM_NUMBER(start),
 		PMT_SECTION_NUMBER(start),
 		PMT_LAST_SECTION_NUMBER(start));
 	DumpHex(start, 183);
@@ -900,7 +931,7 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 
 	memset(short_description, 0, STR_BUF_SIZE);
 	memset(text_description, 0, STR_BUF_SIZE);
-	
+
 	start = pes_ptr + start_of_pes;
 
 	/* collect up continuation frames */
@@ -915,7 +946,7 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 		/* crc32 not valid, throw away buffer */
 		// eit_table->ob_used = 0;
 		eit_table->buffer_valid = 0;
-		return; 	
+		return;
 	}
 	/* 0x4e current_event table */
 	if (eit_table->buffer_valid == 1 &&  0x4e == EIT_PACKET_TABLEID(start)) {
@@ -1000,7 +1031,7 @@ static void extract_eit_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 			cleanup_mpeg_string(text_description);
 			if ( EIT_EVENT_RUNNING_STATUS(event_start) == 4) {
 				char tmp_title[STR_BUF_SIZE+1];
-#ifdef DEBUG				
+#ifdef DEBUG
 				fprintf(stderr, "EIT: RUNNING EVENT: %s (%s) in language %3.3s found.\n", short_description, text_description, EIT_DESCRIPTOR_LANG(first_description_start));
 #endif			/* Write full info into channel title, but only if there is a difference between text and short description */
 				if (text_description != NULL && strlen(text_description) > 0 ) {
@@ -1091,17 +1122,61 @@ static void extract_dsmcc_payload( unsigned char *pes_ptr, size_t pes_len, ts2sh
 	return;
 }
 
-
-
+#ifdef FFMPEG
+static void aac_decode(AVCodecContext *dec_ctx, AVPacket *pkt, AVFrame *frame) {
+	int ret, data_size;
+	static int64_t frame_nr = 0;
+	char	errstr[STR_BUF_SIZE];
+	/* send the packet with the compressed data to the decoder */
+	ret = avcodec_send_packet(dec_ctx, pkt);
+	if (ret < 0) {
+		av_strerror(ret, errstr, STR_BUF_SIZE);
+		output_logmessage("aac_decode(): Error submitting the packet to the decoder: %s\n", errstr);
+		return;
+    }
+	// fprintf(stderr, "aac_decode(): OK submitting packet to the decoder\n");
+    /* read all the output frames (in general there may be any number of them */
+	while (ret >= 0) {
+		AVFrameSideData* sd = NULL;
+		ret = avcodec_receive_frame(dec_ctx, frame);
+		if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+			return;
+		else if (ret < 0) {
+			fprintf(stderr, "Error during decoding\n");
+			exit(1);
+		}
+		frame_nr++;
+		data_size = av_get_bytes_per_sample(dec_ctx->sample_fmt);
+		if (data_size < 0) {
+			/* This should not occur, checking just for paranoia */
+			fprintf(stderr, "Failed to calculate data size\n");
+			exit(1);
+		}
+		sd = av_frame_get_side_data(frame, AV_FRAME_DATA_RDS_DATA_PACKET);
+		if (sd) {
+			if ( sd->size >= 2) {
+				rds_convert_from_extra_pes(sd->data + 1, sd->size - 2);
+			}
+		}
+		//for (i = 0; i < frame->nb_samples; i++)
+			// for (ch = 0; ch < dec_ctx->channels; ch++)
+				// fwrite(frame->data[ch] + data_size*i, 1, data_size, outfile);
+	}
+	return;
+}
+#endif
 
 int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_channel_t *chan, int start_of_pes )
 {
 	unsigned char* es_ptr=NULL;
 	size_t es_len=0;
-
 	int32_t bytes_written = 0;
-	// static uint32_t pes_framesize = 0;
-
+#ifdef FFMPEG
+	int ret;
+	static size_t data_size = 0;
+	static unsigned char data_base[STR_BUF_SIZE];
+	static unsigned char* data = data_base;
+#endif
 	/* Start of audio block / PES? */
 	if ( start_of_pes ) {
 		/* Parse and remove PES header */
@@ -1109,7 +1184,6 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 #if 0
 		fprintf(stderr, "extract_pes_payload new frame: Frame#%lu, chan->pes_remaining = %ld\n", frame_count, chan->pes_remaining);
 #endif
-
 	} else if (chan->pes_stream_id) {
 		// Don't output any data until we have seen a PES header
 		es_ptr = pes_ptr;
@@ -1122,6 +1196,38 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 			es_len=chan->pes_remaining;
 		}
 	}
+#ifdef FFMPEG
+	if (global_state->aac_inline_rds && chan->synced ) {
+		// fprintf(stderr, "Filling Offset: %ld, Buffer-size: %ld\n", data - data_base, data_size);
+		memcpy(data, es_ptr, es_len);
+		data = data + es_len;
+		data_size += es_len;
+		/* Process data with ffmpeg */
+		if (! global_state->ffmpeg.decoded_frame) {
+			if (!(global_state->ffmpeg.decoded_frame = av_frame_alloc())) {
+				output_logmessage("ffmpeg(): Could not allocate audio frame\n");
+			}
+		}
+		// DumpHex(data_base, data_size);
+		ret = av_parser_parse2(global_state->ffmpeg.parser, global_state->ffmpeg.c, &global_state->ffmpeg.pkt->data,
+			&global_state->ffmpeg.pkt->size, data_base, data_size, AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
+		// fprintf(stderr, "ffmpeg(): Decoding: data_size=%ld, ret=%d, pkt->size=%d\n", data_size, ret, global_state->ffmpeg.pkt->size);
+		if (ret < 0) {
+			fprintf(stderr, "ffmpeg(): Error while parsing\n");
+		}
+		data = data_base + ret;
+		data_size -= ret;
+		if (global_state->ffmpeg.pkt->size) {
+			aac_decode(global_state->ffmpeg.c, global_state->ffmpeg.pkt, global_state->ffmpeg.decoded_frame);
+		}
+		memmove(data_base, data, data_size);
+		//if (data_size > 0) {
+		//	fprintf(stderr, "---LEFTOVER---\n");
+		// 	DumpHex(data_base, data_size);
+		//}
+		data = data_base + data_size;
+	}
+#endif
 	// Subtract the amount remaining in current PES packet
 	chan->pes_remaining -= es_len;
 #if 0
@@ -1263,7 +1369,7 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 						return -1;
 					}
 					written = second_write;
-					bytes_written += written;	
+					bytes_written += written;
 					/* Reset the Shoutcastcounter */
 					chan->bytes_written_nt = second_write;
 				}
@@ -1281,7 +1387,7 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 		// Move any remaining memory to the start of the buffer
 		chan->buf_used -= chan->payload_size;
 		memmove( chan->buf_ptr, chan->buf_ptr+chan->payload_size, chan->buf_used );
-		
+
 	}
 	return bytes_written;
 }
@@ -1295,7 +1401,7 @@ void filter_global_loop(int fd_dvr) {
 	unsigned char buf[TS_PACKET_SIZE];
 	int bytes_read;
 	const uint16_t max_sync_errors = 5;
-	
+
 	while (! Interrupted ) {
 		bytes_read = read(fd_dvr, buf, TS_PACKET_SIZE);
 		global_state->bytes_streamed_read += bytes_read;
@@ -1411,7 +1517,7 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 			global_state->output_payload = 1;
 		}
 	}
-	
+
 	/* Do we have data from the last run that we must use for the next one? */
 	if (mem->size > 0) {
 		/* We have a remaining leftover from last curl call. Make a call with a filled up buffer first */
@@ -1427,7 +1533,7 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 		} else {
 			output_logmessage("write_callback (curl): got short block, skipped data at block position %d (%d)\n", 0, global_state->bytes_streamed_read);
 			/* TODO resync? */
-		}		
+		}
 		mem->size = 0;
 	}
 	while (already_processed < realsize && already_processed + TS_PACKET_SIZE <= realsize) {
@@ -1569,7 +1675,7 @@ int16_t process_ts_packet( unsigned char * buf )
 	unsigned int pid=0;
 	size_t pes_len;
 	int32_t streamed = 0;
-	
+
 	frame_count += 1 ;
 
 	/* If we just only receive packets and have output of payload
@@ -1584,7 +1690,7 @@ int16_t process_ts_packet( unsigned char * buf )
 */
 	// Get the PID of this TS packet
 	pid = TS_PACKET_PID(buf);
-		
+
 	// Transport error?
 	if ( TS_PACKET_TRANS_ERROR(buf) ) {
 		if (channel_map[ pid ]) {
@@ -1593,7 +1699,7 @@ int16_t process_ts_packet( unsigned char * buf )
 			output_logmessage("process_ts_packet: Warning, transport error in PID %d.\n", pid);
 		}
 		return TS_SOFT_ERROR;
-	}			
+	}
 
 	// Scrambled? (Should never happen)
 	if ( TS_PACKET_SCRAMBLING(buf) ) {
@@ -1604,7 +1710,7 @@ int16_t process_ts_packet( unsigned char * buf )
 	// Location of and size of PES payload
 	pes_ptr = &buf[4];
 	pes_len = TS_PACKET_SIZE - 4;
-	
+
 	// Check for adaptation field?
 	if (TS_PACKET_ADAPTATION(buf)==0x1) {
 		// Payload only, no adaptation field
@@ -1677,7 +1783,7 @@ int main(int argc, char **argv)
 {
 	int fd_dvr=-1;
 	int i;
-	
+
 	// Initialise data structures
 	for (i=0;i<MAX_PID_COUNT;i++) channel_map[i]=NULL;
 	for (i=0;i<MAX_CHANNEL_COUNT;i++) channels[i]=NULL;
@@ -1685,7 +1791,7 @@ int main(int argc, char **argv)
 	sdt_table = calloc(1, sizeof(section_aggregate_t));
 	dsmcc_table = calloc(1, sizeof(section_aggregate_t));
 	global_state = calloc(1, sizeof(programm_info_t));
-	
+
 	/* Are we running as CGI programme? */
 	if (getenv("QUERY_STRING")) {
 		global_state->cgi_mode = 1;
@@ -1748,7 +1854,7 @@ int main(int argc, char **argv)
 		} else {
 			start_curl_download();
 		}
-	}	
+	}
 	// Clean up
 	for (i=0;i<channel_count;i++) {
 		if (channels[i]->buf) free( channels[i]->buf );

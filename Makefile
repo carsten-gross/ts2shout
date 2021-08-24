@@ -2,7 +2,13 @@
 # DEBUG disabled is the correct setting
 
 CC ?= gcc
+# USE_FFMPEG=1
+
+ifeq ($(USE_FFMPEG),)
 CFLAGS ?=-O2 -Wall
+else
+CFLAGS ?=-O2 -Wall -DFFMPEG -I. -I../FFmpeg
+endif
 # DEBUG=-DDEBUG -g
 PREFIX ?= /usr/local
 SRCS=ts2shout.c pes.c mpa_header.c util.c crc32.c rds.c dsmcc.c
@@ -29,15 +35,20 @@ $(DEPDIR): ; @mkdir -p $@
 
 DEPFILES := $(SRCS:%.c=$(DEPDIR)/%.d)
 
+ifeq ($(USE_FFMPEG),)
 ts2shout: ts2shout.o mpa_header.o util.o pes.o crc32.o rds.o dsmcc.o
 	${CC} ${DEBUG} ${LDFLAGS} -o ts2shout ts2shout.o rds.o mpa_header.o util.o pes.o crc32.o dsmcc.o -lcurl -lz
+else
+ts2shout: ts2shout.o mpa_header.o util.o pes.o crc32.o rds.o dsmcc.o
+	${CC} ${DEBUG} ${LDFLAGS} -o ts2shout ts2shout.o rds.o mpa_header.o util.o pes.o crc32.o dsmcc.o ffmpeg/libavcodec.a ffmpeg/libavutil.a -lX11 -lva -lva-drm -lva-x11 -lpthread -lswresample -lcurl -lz -lm
+endif
 
 clean:
 	rm -f *.o ts2shout
 
 install: ts2shout
 	install -g root -m 555 -o root ts2shout ${PREFIX}/bin/ts2shout
-	install -D -g root -m 444 -o root ts2shout.1 ${PREFIX}/man/man1/ts2shout.1 
+	install -D -g root -m 444 -o root ts2shout.1 ${PREFIX}/man/man1/ts2shout.1
 
 
 $(DEPFILES):

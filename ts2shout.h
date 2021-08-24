@@ -29,6 +29,17 @@
 
 #include "mpa_header.h"
 
+#ifdef FFMPEG
+#if 0
+#include <libavutil/frame.h>
+#include <libavutil/mem.h>
+#include <libavcodec/avcodec.h>
+#else
+#include <../FFmpeg/libavutil/frame.h>
+#include <../FFmpeg/libavutil/mem.h>
+#include <../FFmpeg/libavcodec/avcodec.h>
+#endif
+#endif
 
 // The size of MPEG2 TS packets
 #define TS_PACKET_SIZE			188
@@ -65,9 +76,9 @@
 #define TS_PACKET_ADAPT_PCRVALUE(b) ((int64_t)( ((int64_t)(b[6]))<<40 | ((int64_t)(b[7]))<<32 | ((int64_t)b[8])<<24 | b[9]<<16 | b[10]<<8 | b[11] ))
 #define TS_PACKET_POINTER(b)		(uint8_t)((((b[1]&0x40)>>6 == 1) && (b[4] < 183))? b[4] : 0)
 
-/* 
+/*
 	Macros for access MPEG-2 EIT packets
-	http://www.etsi.org/deliver/etsi_en/300400_300499/300468/01.14.01_60/en_300468v011401p.pdf 
+	http://www.etsi.org/deliver/etsi_en/300400_300499/300468/01.14.01_60/en_300468v011401p.pdf
 	Page 28
 */
 #define EIT_PACKET_TABLEID(b)		(b[0])
@@ -109,7 +120,7 @@
 #define PAT_TRANSPORT_STREAM_ID(b) (uint16_t)(b[3]<<8 | b[4])
 #define PAT_SECTION_NUMBER(b) (b[6])
 #define PAT_LAST_SECTION_NUMBER(b) (b[7])
-#define PAT_PROGRAMME_START(b) (b + 8) 
+#define PAT_PROGRAMME_START(b) (b + 8)
 #define PAT_PROGRAMME_PMT(b) ((uint16_t)( (b[2]&0x1f) <<8 | b[3]))
 
 /* Macros for accessing PMT frames */
@@ -226,18 +237,18 @@ typedef enum {
 	CHARSET_LATIN1	= 5,
 	CHARSET_COMPLEX = 0x10,
 	CHARSET_UTF8	= 0x15
-} enum_charset; 
+} enum_charset;
 
 /* An enum to select best quality audio */
 typedef enum {
 	AUDIO_PREFERENCE_LOW    = 0x100,
-	AUDIO_PREFERENCE_MEDIUM = 0x200, 
+	AUDIO_PREFERENCE_MEDIUM = 0x200,
 	AUDIO_PREFERENCE_BETTER = 0x300,
 	AUDIO_PREFERENCE_BEST   = 0x400 } enum_audio_preference;
 
 typedef struct audio_quality_s {
 	enum_audio_preference audio_preference;
-	char * stream_type_name; 
+	char * stream_type_name;
 	uint8_t	aac_profile;
 	unsigned char * ptr;
 	enum_stream_type stream_type;
@@ -249,11 +260,11 @@ typedef struct ts2shout_channel_s {
 	int num;				// channel number
 	int pid;				// Packet Identifier of stream
 
-	enum_channel_type channel_type;	// Channel Type (MPEG / PMT / whatever) 
-	
+	enum_channel_type channel_type;	// Channel Type (MPEG / PMT / whatever)
+
 	int continuity_count;	// TS packet continuity counter
 
-	/* Only relevant for the payload stream */	
+	/* Only relevant for the payload stream */
 	int pes_stream_id;		// PES stream ID
 	size_t pes_remaining;	// Number of bytes remaining in current PES packet
 	unsigned long pes_ts;	// Timestamp for current PES packet
@@ -267,6 +278,17 @@ typedef struct ts2shout_channel_s {
 	int payload_size;		// Size of the payload
 } ts2shout_channel_t;
 
+/* An internal buffer for handling ffmpegs libavcodec parser data */
+typedef struct avcodec_buffers_s {
+#ifdef FFMPEG
+	const AVCodec* codec;
+	AVCodecContext* c;
+	AVCodecParserContext* parser;
+	AVPacket* pkt;
+	AVFrame* decoded_frame;
+#endif
+} avcodec_buffers_t;
+
 /* global information about the received programme */
 typedef struct programm_info_s {
 	uint8_t	info_available;             /* Information available */
@@ -279,8 +301,6 @@ typedef struct programm_info_s {
 	char old_stream_title[STR_BUF_SIZE]; /* Old StreamTitle, that was given in last session */
 	uint32_t br;                        /* Bitrate of stream e.g. 320000 kBit/s	*/
 	uint32_t sr;                        /* Streamrate of stream e.g. 48 kHz == 48000 Hz */
-	uint8_t  latm_magic1;               /* LATM-Magic Byte 1 */
-	uint8_t	 latm_magic2;               /* LATM-Magic Byte 2 */
 	uint64_t bytes_streamed_read;       /* Total bytes read from stream */
 	uint64_t bytes_streamed_write;      /* Total bytes write to stdout/streamed to application/CGI */
 	uint16_t ts_sync_error;             /* Total global number of sync errors */
@@ -295,7 +315,9 @@ typedef struct programm_info_s {
 	int64_t pcr_first;                  /* PCR, first found program clock reference in *used* audio PAYLOAD stream */
 	uint32_t playtime_s;                /* current playtime in stream, calculated out of PCR stamps, useful for manual filtering */
 	int8_t cgi_mode;                    /* Are we running as CGI programme? This is set if there is QUERY_STRING set in the environment */
-} programm_info_t; 
+	uint8_t aac_inline_rds;             /* set if AAC inline RDS is possible */
+    avcodec_buffers_t ffmpeg;           /* ffmpeg library access for decoding AAC-embedded RDS */
+} programm_info_t;
 
 /* An aggregator for all types of transport stream tables */
 typedef struct section_aggregate_s {
@@ -307,24 +329,24 @@ typedef struct section_aggregate_s {
 	uint8_t		buffer[EIT_BUF_SIZE];
 	uint8_t		offset_buffer[TS_PACKET_SIZE]; /* A buffer for continued tables */
 	uint8_t		ob_used;			/* Pointer wether the offset_buffer is used */
-} section_aggregate_t; 
+} section_aggregate_t;
 
 /* crc32.c */
 uint32_t dvb_crc32 (unsigned char *data, int len);
 uint16_t crc16 (unsigned char *data, int len);
 
 /* In ts2shout.c */
-void output_logmessage(const char *fmt, ... ); 
+void output_logmessage(const char *fmt, ... );
 extern int channel_count;
 extern ts2shout_channel_t *channel_map[MAX_PID_COUNT];
 extern ts2shout_channel_t *channels[MAX_CHANNEL_COUNT];
 
 /* process_ts_packet returns the number of handled bytes, 0 or one of the two
- * error codes. A soft error is logged and ignored if it happens spuriously, a 
- * hard error leads to an immediate end of stream processing and an exit with an 
+ * error codes. A soft error is logged and ignored if it happens spuriously, a
+ * hard error leads to an immediate end of stream processing and an exit with an
  * appropriate log message. TODO: Handle the SOFT_ERROR */
 #define TS_SOFT_ERROR -1
-#define TS_HARD_ERROR -2 
+#define TS_HARD_ERROR -2
 int16_t process_ts_packet(unsigned char *buf);
 
 /* In pes.c */
@@ -332,18 +354,18 @@ unsigned char* parse_pes( unsigned char* buf, int size, size_t *payload_size, ts
 
 /* In util.c */
 void init_structures();
-int add_channel(enum_channel_type channel_type, int pid); 
+int add_channel(enum_channel_type channel_type, int pid);
 /* Get nice channel_name */
-const char* channel_name(enum_channel_type channel_type); 
+const char* channel_name(enum_channel_type channel_type);
 /* Get mime/type of stream output */
-const char* mime_type(enum_stream_type stream_type); 
+const char* mime_type(enum_stream_type stream_type);
 /* Get AAC profile */
 const char* aac_profile_name(uint8_t profile_and_level);
 
-unsigned char *utf8(unsigned char* in, unsigned char* out); 
+unsigned char *utf8(unsigned char* in, unsigned char* out);
 
-void add_cache(programm_info_t* global_state); 
-void fetch_cached_parameters(programm_info_t* global_state); 
+void add_cache(programm_info_t* global_state);
+void fetch_cached_parameters(programm_info_t* global_state);
 
 /* In dsmcc.c */
 void handle_dsmcc_message(unsigned char *buf, size_t len);
