@@ -36,6 +36,8 @@
 
 #include "ts2shout.h"
 
+// #define DEBUG
+
 extern programm_info_t *global_state;
 
 static struct {
@@ -237,7 +239,6 @@ void rds_handle_message(uint8_t* rds_message, uint8_t size) {
 	if (! check_message(rds_message, size))  
 		return;
 #ifdef DEBUG
-	fprintf(stderr, "--- NEW RDS ---\n");
 	DumpHex(rds_message, size);
 #endif
 	switch (type) {

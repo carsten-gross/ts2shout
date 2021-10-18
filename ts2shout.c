@@ -467,6 +467,7 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	uint32_t current_offset = 9; /* Size of PMT "header" */
 	uint32_t best_quality = 0;
 	audio_quality_t* quality[10]; /* Maximum of 10 streams possible */
+	char aac_info_message[STR_BUF_SIZE] = "";
 
 	/* Only check for possible streaming payload in PMT if not one is added yet */
 	if ( global_state->payload_added) {
@@ -487,7 +488,7 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 	if ( PMT_TABLE_ID(start) == 2) {
 		/* Check crc32 to avoid checking it later on */
 		if (dvb_crc32(start, PAT_SECTION_LENGTH(start) + 3) != 0) {
-			output_logmessage("extract_pmt_payload: crc32 does not match %d found, 0 expected\n", dvb_crc32(start, PAT_SECTION_LENGTH(start) + 3));
+			output_logmessage("extract_pmt_payload(): crc32 does not match %d found, 0 expected\n", dvb_crc32(start, PAT_SECTION_LENGTH(start) + 3));
 			return;
 		}
 		if (PMT_SECTION_NUMBER(start) == 0 && PMT_LAST_SECTION_NUMBER(start) == 0) {
@@ -530,33 +531,33 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 					/* find the MPEG audio decoder */
 					global_state->ffmpeg.codec = avcodec_find_decoder(AV_CODEC_ID_AAC_LATM);
 					if (! global_state->ffmpeg.codec) {
-						output_logmessage("ffmpeg(): Codec AV_CODEC_ID_AAC_LATM not found.\n");
+						output_logmessage("avcodec_find_decoder(): Codec AV_CODEC_ID_AAC_LATM not found.\n");
 						goto end;
 					}
 					global_state->ffmpeg.parser = av_parser_init(global_state->ffmpeg.codec->id);
 					if (! global_state->ffmpeg.parser) {
-						output_logmessage("ffmpeg(): Parser for Codec not possible.\n");
+						output_logmessage("av_parser_init(): Parser for Codec not possible.\n");
 						goto end;
 					}
 					global_state->ffmpeg.c = avcodec_alloc_context3(global_state->ffmpeg.codec);
 					if (! global_state->ffmpeg.c) {
-						output_logmessage("ffmpeg(): Could not allocate audio codec context.\n");
+						output_logmessage("avcodec_alloc_context3(): Could not allocate audio codec context.\n");
 						goto end;
 					}
 					/* open it */
 					if (avcodec_open2(global_state->ffmpeg.c, global_state->ffmpeg.codec, NULL) < 0) {
-						output_logmessage("ffmpeg(): Could not open codec.\n");
+						output_logmessage("avcodec_open2(): Could not open codec.\n");
 						goto end;
 					}
 					global_state->ffmpeg.decoded_frame = av_frame_alloc();
 					if (! global_state->ffmpeg.decoded_frame) {
-						output_logmessage("ffmpeg(): Could not allocate decoded frame.\n");
+						output_logmessage("av_frame_alloc(): Could not allocate decoded frame space.\n");
 						goto end;
 					}
 					/* Parser successfully initialized, let's go! */
 					global_state->aac_inline_rds = 1;
 					end:
-					output_logmessage("AAC inline RDS messages are %s\n", ((global_state->aac_inline_rds > 0)? "enabled" : "disabled"));
+					(void)0; // NOP
 #endif
 				}
 			}
@@ -565,6 +566,8 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 		for (i = 0; i < found_streams_counter; i++) {
 			if (quality[i]->stream_type == STREAM_MODE_RDS) {
 				if (! channel_map[PMT_PID(quality[i]->ptr)]) {
+					global_state->aac_inline_rds = 0;
+					sprintf(aac_info_message, " (Separate RDS PID %d available)", PMT_PID(quality[i]->ptr) );
 					add_payload_from_pmt(quality[i], start);
 				}
 			}
@@ -581,6 +584,9 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 			free(quality[i]);
 		}
 	}
+#ifdef FFMPEG
+	output_logmessage("AAC inline RDS messages are %s%s\n", ((global_state->aac_inline_rds > 0)? "enabled" : "disabled"), aac_info_message);
+#endif
 }
 
 
@@ -1153,9 +1159,35 @@ static void aac_decode(AVCodecContext *dec_ctx, AVPacket *pkt, AVFrame *frame) {
 			exit(1);
 		}
 		sd = av_frame_get_side_data(frame, AV_FRAME_DATA_RDS_DATA_PACKET);
+		/* Sometimes more than one UECP message is found in the frame side data
+		   therefore we try to split it up. */
 		if (sd) {
+			unsigned char* data = sd->data;
 			if ( sd->size >= 2) {
-				rds_convert_from_extra_pes(sd->data + 1, sd->size - 2);
+				int startval = 1;
+				int used = 0;
+				int count = 0; // ensure termination, also for broken data
+				while ( startval < (sd->size - 1) && count < 15 ) {
+					int i = startval;
+					for (; i < (sd->size - 1); i++) {
+						if (   data[i] == 0xff
+							&& data[i+1] == 0xfe) {
+							// fprintf(stderr, "Splitup @%d (size %d, maxsize %ld)\n", startval, i - startval, sd->size);
+							rds_convert_from_extra_pes(data + startval, i - startval);
+							used += 1;
+							startval = i + 2;
+							break;
+						}
+					}
+					count++;
+				}
+				if (used > 0) {
+					// Last element
+					// fprintf(stderr, "Last Element %d (size %ld)\n", startval, sd->size - startval - 1);
+					rds_convert_from_extra_pes(data + startval, sd->size - startval - 1);
+				} else {
+					rds_convert_from_extra_pes(sd->data + 1, sd->size - 2);
+				}
 			}
 		}
 		//for (i = 0; i < frame->nb_samples; i++)
@@ -1681,8 +1713,8 @@ int16_t process_ts_packet( unsigned char * buf )
 	/* If we just only receive packets and have output of payload
 	   (because no audio in stream or whatver) */
 	if (global_state->cgi_mode && ( ! global_state->output_payload )
-		&& frame_count > 3000) {
-		output_logmessage("Received more then 320 kByte of data and payload output not started. bailing out\n");
+		&& frame_count > 4000) {
+		output_logmessage("Received more then 500 kByte of data and payload output not started. bailing out\n");
 		return TS_HARD_ERROR;
 	}
 /* DEBUG possibility
