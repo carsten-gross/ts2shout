@@ -4,7 +4,7 @@
 .SH SYNOPSIS
 .B t2shout [noshout] [ac3] [rds] 
 .sp
-.B cat mpeg-transport.ts | ts2shout noshout > audio.mpeg
+.B cat mpeg-transport.ts | ts2shout rds noshout > audio.mpeg
 .sp
 .B cat mpeg-transport.ts | ts2shout noshout ac3 > audio.ac3
 .sp
@@ -13,12 +13,12 @@
 .SH DESCRIPTION
 .B ts2shout 
 is a classic unix filter program, further described on http://www.siski.de/~carsten/radio-streaming-squeezebox.html. 
-As a unix filter you can feed an audio mpeg transport stream directly into stdin of the application. It will 
+As a unix filter you can feed an audio mpeg transport (mp2t) stream directly into stdin of the application. It will
 give you a shoutcast audio stream (makes only sense in conjunction with a web server) or a plain mpeg audio stream. It
 can even generate AC-3 if it is included in the mpeg transport stream. There are some german radio stations having this.
 .sp
 Another application is to use it as CGI (common gateway interface) application called directly from apache. Please see
-the accompaining documenation of the package. Wether CGI or filter mode is to be used is decided by the enviroment variable
+the accompaining documentation of the package. Wether CGI or filter mode is to be used is decided by the enviroment variable
 QUERY_STRING, if it is set it is assumed that it is running in CGI mode.
 .sp
 Normally
@@ -40,7 +40,7 @@ write a native mpeg stream, not a shoutcast media stream
 prefers to get the ac3 stream, not the mpeg audio.
 
 .B rds		
-if available, prefer RDS data over MPEG EIT (EPG data)
+if available, prefer decoding RDS data over MPEG EIT (EPG data)
 
 .SH ENVIRONMENT
 The Environment variables determine whether the application runs in filter or in CGI mode.
@@ -61,7 +61,7 @@ If set to 1 the output should be done shoutcast compatible. This flag should onl
 Normally AC-3 will be selected last. If set to 1 an AC-3 stream is the most preferred output.
 .sp
 .B RDS
-If set to 1 the mpeg stream is scannend for RDS data. If found it is preferred over MPEG EIT. This is supported by DVB-S streams from germany and switzerland (NOT by austria)
+If set to 1 the mpeg stream is scannend for RDS data. If found it is preferred over MPEG EIT. Not all radio stations support this, in this case EIT will be used.
 .sp
 
 .SH FILES

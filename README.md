@@ -41,7 +41,7 @@ ts2shout should work with most DVB-C/DVB-S radio stations and is tested by
 myself with Unitymedia DVB-C, Hotbird 13E and Astra 19.2E DVB-S satellite
 reception.
 
-German and Swiss radio on DVB-S (and also DVB-C) supports RDS within the MPEG
+Many radio stations on DVB-S (and also DVB-C) supports RDS within the MPEG
 transport stream. The RDS data (Radio Data System, that thing from the Analog
 Radio on FM) is just inserted inside the padding bytes MPEG1/2 audio stream. If
 the stream uses AAC-LATM for audio RDS is also searched in a defined private
@@ -54,11 +54,9 @@ preferred over MPEG EIT/EPG data. This is useful to get title and artist
 information in the shoutcast stream.
 
 Just compile the application with make on your linux box and install it
-manually e.g. to /usr/local/bin/ts2shout. It does not need any libraries for
-shoutcast or mpeg as it just parses and uses a minimum set of mpeg
-specification just to work for me in my special setup to get stream information
-on the Squeezebox. For MPEG this is no longer true, as you can use ffmpeg to fetch
-AAC inline RDS data.
+manually with "make install", which defaults to /usr/local/bin. It's possible
+to use it without ffmpeg, for a lot of use cases libcurl and libz is sufficient.
+ffmpeg is required to fetch inline RDS data from AAC audio.
 
 Some german cultural programmes also have AC3 streams available. If you supply
 the command line parameter "ac3" or (in CGI mode) the value "1" in the
