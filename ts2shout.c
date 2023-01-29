@@ -1203,6 +1203,7 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 	unsigned char* es_ptr=NULL;
 	size_t es_len=0;
 	int32_t bytes_written = 0;
+	static int64_t pes_start = 0;
 #ifdef FFMPEG
 	int ret;
 	static size_t data_size = 0;
@@ -1339,6 +1340,15 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 	// Got enough to send packet and we are allowed to output data
 	if (chan->buf_used > chan->payload_size && global_state->output_payload ) {
 		#ifndef DEBUG
+		if (pes_start == 0) {	
+			pes_start = chan->pes_ts;
+		}
+		/* Some work going on 
+		output_logmessage("PTS %.2f, PCR %.2f, OFFSET %.2f \n", 
+			(float)( chan->pes_ts - pes_start ) / 90, 
+			(float)( ((global_state->pcr_current)>>15) - ((global_state->pcr_first)>>15) ) / 90,
+			( (float)((global_state->pcr_current>>15) - (global_state->pcr_first>>15) ) / 90 ) - ((float)( chan->pes_ts - pes_start ) / 90 ) ); 
+		*/
 		/* If Icy-MetaData is set to 1 a shoutcast StreamTitle is required all 8192 */
 		/* (SHOUTCAST_METAINT) Bytes */
 		/* see documentation: https://cast.readme.io/docs/icy */
@@ -1539,7 +1549,7 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 						"icy-name: %.120s\n" \
 						"icy-metaint: %d\n\n",
 						global_state->mime_type,
-						global_state->br * 1000, global_state->sr, global_state->station_name, SHOUTCAST_METAINT);
+						global_state->br, global_state->sr, global_state->station_name, SHOUTCAST_METAINT);
 			} else {
 				snprintf(header, STR_BUF_SIZE, "Content-Type: %s\n" \
 						"Connection: close\n\n", global_state->mime_type);
@@ -1759,7 +1769,9 @@ int16_t process_ts_packet( unsigned char * buf )
 			if (channel_map[pid] && channel_map[pid]->channel_type == CHANNEL_TYPE_PAYLOAD) {
 				if (global_state->pcr_first == 0) {
 					global_state->pcr_first = TS_PACKET_ADAPT_PCRVALUE(buf);
+					global_state->pcr_current = TS_PACKET_ADAPT_PCRVALUE(buf);
 				} else {
+					global_state->pcr_current = TS_PACKET_ADAPT_PCRVALUE(buf); 
 					global_state->playtime_s = (TS_PACKET_ADAPT_PCRVALUE(buf) - global_state->pcr_first)/(((double)27000000) * (double)(109.1));
 				}
 			}

@@ -312,7 +312,8 @@ typedef struct programm_info_s {
 	uint16_t transport_stream_id;       /* The transport stream id of the wanted programm stream (important for EIT/SDT scan) */
 	enum_stream_type stream_type;       /* The type of transport stream (abstract), fetch from PAT/PMT */
 	const char * mime_type;             /* The MIME type (e.g. audio/mpeg) of the current stream (indirect from PAT/PMT) */
-	int64_t pcr_first;                  /* PCR, first found program clock reference in *used* audio PAYLOAD stream */
+	uint64_t pcr_first;                  /* PCR, first found program clock reference in *used* audio PAYLOAD stream */
+	uint64_t pcr_current;				/* PCR current */
 	uint32_t playtime_s;                /* current playtime in stream, calculated out of PCR stamps, useful for manual filtering */
 	int8_t cgi_mode;                    /* Are we running as CGI programme? This is set if there is QUERY_STRING set in the environment */
 	uint8_t aac_inline_rds;             /* set if AAC inline RDS is possible */
