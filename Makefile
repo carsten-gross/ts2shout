@@ -4,10 +4,13 @@
 CC ?= gcc
 # USE_FFMPEG=1
 
+FFMPEG_PATH=../FFmpeg
+
+
 ifeq ($(USE_FFMPEG),)
 CFLAGS ?=-O2 -Wall
 else
-CFLAGS ?=-O2 -Wall -DFFMPEG -I. -I../FFmpeg
+CFLAGS ?=-O2 -Wall -DFFMPEG -I. -I${FFMPEG_PATH}
 endif
 # DEBUG=-DDEBUG -g
 PREFIX ?= /usr/local
@@ -40,7 +43,7 @@ ts2shout: ts2shout.o mpa_header.o util.o pes.o crc32.o rds.o dsmcc.o
 	${CC} ${DEBUG} ${LDFLAGS} -o ts2shout ts2shout.o rds.o mpa_header.o util.o pes.o crc32.o dsmcc.o -lcurl -lz
 else
 ts2shout: ts2shout.o mpa_header.o util.o pes.o crc32.o rds.o dsmcc.o
-	${CC} ${DEBUG} ${LDFLAGS} -o ts2shout ts2shout.o rds.o mpa_header.o util.o pes.o crc32.o dsmcc.o ffmpeg/libavcodec.a ffmpeg/libavutil.a -lX11 -lva -lva-drm -lva-x11 -lpthread -lswresample -lcurl -lz -lm
+	${CC} ${DEBUG} ${LDFLAGS} -o ts2shout ts2shout.o rds.o mpa_header.o util.o pes.o crc32.o dsmcc.o ${FFMPEG_PATH}/libavcodec/libavcodec.a ${FFMPEG_PATH}/libavutil/libavutil.a -lX11 -lva -lva-drm -lva-x11 -lpthread -lswresample -lcurl -lz -lm
 endif
 
 clean:

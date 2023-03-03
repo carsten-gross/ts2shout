@@ -255,7 +255,7 @@ audio_quality_t * analyze_stream_from_pmt(unsigned char *pmt_stream_info_offset,
 			break;
 		case 0x11:  /* MPEG 4 AAC LATM */
 			audio_all_checks = AUDIO_STREAM;
-			stream_quality->stream_type_name = "HE-AAC";
+			stream_quality->stream_type_name = "LATM";
 			stream_quality->stream_type = STREAM_MODE_AACP;
 			stream_quality->audio_preference = AUDIO_PREFERENCE_BETTER;
 			break;
@@ -554,11 +554,13 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 						output_logmessage("av_frame_alloc(): Could not allocate decoded frame space.\n");
 						goto end;
 					}
-					/* Parser successfully initialized, let's go! */
+#endif 
+					/* No FFMPEG or Parser successfully initialized, let's go! */
 					global_state->aac_inline_rds = 1;
+#ifdef FFMPEG
 					end:
-					(void)0; // NOP
 #endif
+					(void)0; // NOP
 				}
 			}
 		}
