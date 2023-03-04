@@ -1,4 +1,6 @@
 # ts2shout
+
+## Introduction
 ts2shout is a small software that acts as a filter or cgi programm to convert a
 single program mpeg transport stream directly to a webradio compatible
 shoutcast stream. The generated shoutcast stream includes broadcast and title
@@ -12,6 +14,8 @@ It is based on the dvbshout application by Nicholas J. Humfrey
 different. ts2shout uses autoconfiguration by reading PAT and PMT tables from a
 single program mpeg transport stream and outputs a native mpeg (or shoutcast) stream 
 directly.
+
+## Usage modes
 
 There are two modes, one is very like a traditional unix filter: a mpeg transport stream
 is read from stdin and it is filtered to stdout. Error and info messages are directed to 
@@ -32,6 +36,8 @@ requires the availability of libz. Please install libz and the corresponding
 libz-dev package. Currently dsmcc is disabled in the code, because it is a
 pre-alpha version just writing the stream data files into a cache dir.
 
+## Detailed description
+
 ts2shout outputs a shoutcast stream with the "best" found mpeg audio stream in
 PAT/PMT and the "current programm" from the mpeg EIT ("EPG") translated to
 "StreamTitle" all 8192 bytes inside the mpeg stream. This is a standard for
@@ -46,17 +52,30 @@ transport stream. The RDS data (Radio Data System, that thing from the Analog
 Radio on FM) is just inserted inside the padding bytes MPEG1/2 audio stream. If
 the stream uses AAC-LATM for audio RDS is also searched in a defined private
 stream in a separate MPEG pid. There is a method to include RDS also
-in AAC-LATM audio directly, this is only suported with a current development version 
-of ffmpeg. Please see my patched version of FFmpeg and the Makefile of this project.
+in AAC-LATM audio directly. As at is necessary to fully decode the AAC data for this
+I made a modified version of ffmpeg that is capable of extracting the RDS data out of 
+AAC and provide it to ts2shout. Please see my patched version of FFmpeg and the Makefile of this project.
 
 If you supply the environment variable RDS or the command line parameter rds it is
 preferred over MPEG EIT/EPG data. This is useful to get title and artist
 information in the shoutcast stream.
 
+## Simple compiling 
+
 Just compile the application with make on your linux box and install it
 manually with "make install", which defaults to /usr/local/bin. It's possible
 to use it without ffmpeg, for a lot of use cases libcurl and libz is sufficient.
 ffmpeg is required to fetch inline RDS data from AAC audio.
+
+## Compling with inline AAC RDS suport 
+
+To achive decoding inline AAC RDS data, please download my version of ffmpeg and just place the source directory directly
+next to the source directory of ts2shout. After compiling ffmpeg (you should *not* install it, just 
+compile it to get the ".a" libraries) you can enable "FFMPEG" in the Makefile of
+ts2shout. Now you should just compile ts2shout. It will be quite big, because it 
+contains most of ffmpeg's libraries to decode AAC RDS.
+
+## Installing
 
 Some german cultural programmes also have AC3 streams available. If you supply
 the command line parameter "ac3" or (in CGI mode) the value "1" in the
