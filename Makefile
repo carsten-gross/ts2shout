@@ -2,7 +2,7 @@
 # DEBUG disabled is the correct setting
 
 CC ?= gcc
-# USE_FFMPEG=1
+USE_FFMPEG=1
 
 FFMPEG_PATH=../FFmpeg
 

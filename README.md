@@ -69,11 +69,15 @@ ffmpeg is required to fetch inline RDS data from AAC audio.
 
 ## Compling with inline AAC RDS suport 
 
-To achive decoding of inline AAC RDS data, please download my version of ffmpeg and just place the source directory directly
-next to the source directory of ts2shout. After compiling ffmpeg (you should *not* install it, just 
-compile it to get the ".a" libraries) you can enable "USE_FFMPEG" in the Makefile of
-ts2shout. Now you should just compile ts2shout. It will be quite big, because it 
-contains most of ffmpeg's libraries to decode AAC RDS.
+To achive decoding of inline AAC RDS data, please download my version of ffmpeg
+and place the source directory directly next to the source directory of
+ts2shout. Please install all the supportive stuff necessary for compiling of
+ffmpeg and compile ffmpeg.  You should take care to *not* install this version
+of ffmpeg to avoid interfering with your system installation. Just compile it
+to get the ".a" libraries. After successfully compiling ffmpeg you can enable
+"USE_FFMPEG" in the Makefile of ts2shout. Now you can just compile ts2shout.
+The resulting executable of ts2shout will be quite big, because it contains
+most of ffmpeg's libraries to decode AAC RDS.
 
 Your source directories should be placed like this
 
