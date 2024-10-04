@@ -304,9 +304,6 @@ void rds_convert_from_extra_pes(uint8_t* buffer, size_t size) {
 	static uint8_t rds_message[255];
 	int32_t  i = 0;
 	uint8_t rds_data_size = buffer[3 + i];
-#ifdef DEBUG
-	fprintf(stderr, "Added RDS Data from extra PES Stream\n");
-#endif
 	if (rds_data_size == 0) {
 		return;
 	}

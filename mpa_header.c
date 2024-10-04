@@ -219,11 +219,11 @@ void mpa_header_print( mpa_header_t *mh )
 		output_logmessage("Synced to %s layer %d, %d kbps, %d Hz, %s\n", mpeg_std, mh->layer, mh->bitrate, mh->samplerate, mpeg_mode);
 	} else if ( global_state->stream_type == STREAM_MODE_AAC ) {
 		if (mh->version == 0 && mh->layer == 0) {
-			output_logmessage("Synced to AAC, Samplerate %d Hz, Configuration: %s\n", mh->samplerate, aac_channel_name[mh->channel_acmod]);
+			output_logmessage("Synced to AAC audio, Samplerate %d Hz, Configuration: %s\n", mh->samplerate, aac_channel_name[mh->channel_acmod]);
 		}
 	} else if ( global_state->stream_type == STREAM_MODE_AACP ) {
 		if ( mh->layer == 0 ) {
-			output_logmessage("Synced to LATM, Guessed Samplerate %d Hz, Bitrate %d kBit/s\n", global_state->sr, global_state->br);
+			output_logmessage("Synced to LATM audio, Guessed Samplerate %d Hz, Bitrate %d kBit/s\n", global_state->sr, global_state->br);
 		}
 	}
 }
