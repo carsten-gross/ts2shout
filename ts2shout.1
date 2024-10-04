@@ -2,11 +2,11 @@
 .SH NAME
 .B ts2shout - Convert a MPEG transport stream to shoutcast, plain mpeg or AC-3 audio
 .SH SYNOPSIS
-.B t2shout [noshout] [ac3] [rds] 
+.B t2shout [shoutcast] [ac3] [rds] 
 .sp
-.B cat mpeg-transport.ts | ts2shout rds noshout > audio.mpeg
+.B cat mpeg-transport.ts | ts2shout rds > audio.mpeg
 .sp
-.B cat mpeg-transport.ts | ts2shout noshout ac3 > audio.ac3
+.B cat mpeg-transport.ts | ts2shout ac3 > audio.ac3
 .sp
 .B [Installation of ts2shout as cgi application] 
 .sp
@@ -25,16 +25,16 @@ Normally
 .B ts2shout 
 is installed as a mod_action in an web server application like apache. For
 test cases it is always possible to use it at the command prompt to manually
-convert an mpeg transport stream into native mpeg audio. You have to use
-the option \fB noshout \fR then.
+convert an mpeg transport stream into native mpeg audio. This is the default. If you want to test the generation
+of shoutcast streams you have to use the command option \fB shoutcast \fR then.
 .sp
 Used as a webfilter it converts from MIME type audio/mp2t to audio/mpeg, audio/aac or audio/aacp (or audio/ac3 if ac3 environment is set). 
 The to be used MIME type is autodetected using the contents of the MPEG-TS PMT section. ts2shout doesn't do any audio format conversion, it is just 
 converted from MPEG-transport to "audio-only".
 
 .SH OPTIONS
-.B noshout	
-write a native mpeg stream, not a shoutcast media stream
+.B shoutcast	
+enforce generation of a shoutcast stream - this is for testing only - it will \fB not \fR work with command line players.
 
 .B ac3		
 prefers to get the ac3 stream, not the mpeg audio.

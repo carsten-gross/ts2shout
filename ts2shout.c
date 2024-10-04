@@ -46,7 +46,7 @@
 int Interrupted=0;        /* Playing interrupted by signal? */
 int channel_count=0;      /* Current listen channel count */
 
-uint8_t shoutcast=1;      /* Send shoutcast headers? */
+uint8_t shoutcast=0;      /* Send shoutcast headers? Default no */
 uint8_t	logformat=1;      /* Apache compatible output format */
 
 uint64_t frame_count=0;	  /* ts-Frame number (used for debugging) */
@@ -78,8 +78,8 @@ static void parse_args(int argc, char **argv)
 	/* TODO ... improve command line handling */
 	int i = 0;
 	for (i = 0; i < argc; i++) {
-		if (strcmp("noshout", argv[i]) == 0) {
-			shoutcast = 0;
+		if (strcmp("shoutcast", argv[i]) == 0) {
+			shoutcast = 1;
 		}
 		if (strcmp("ac3", argv[i]) == 0) {
 			global_state->want_ac3 = 1;
