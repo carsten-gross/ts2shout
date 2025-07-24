@@ -41,6 +41,18 @@ typedef struct server_initiate_buffer {
 
 } server_initiate_buffer_t;
 
+typedef enum {
+	TOPLEVELDIRTYPE,
+	DIRTYPE,
+	FILETYPE } modetype_t;
+
+typedef struct dir_element {
+	uint64_t object_id;
+	uint8_t object_key_length;
+	uint8_t object_key[2];
+	char	filename[255];
+	modetype_t type;
+} dir_element_t;
 
 /* Makros for accessing DSM-CC packets */
 #define DSMCC_MESSAGE_TYPE(b)       (b[0])
@@ -65,6 +77,11 @@ typedef struct server_initiate_buffer {
 #define DSMCC_MODULE_INFO_LENGTH(b)     (b[7])
 #define DSMCC_MODULE_INFO_DESCRIPTOR(b) (b[8])
 
+/* Universal Makros */
+#define DSMCC_MODULE_FETCH8BITVAL(b)	(b[0])
+#define DSMCC_MODULE_FETCH16BITVAL(b)	((uint16_t)((b[0]<<8) | b[1]))
+#define DSMCC_MODULE_FETCH32BITVAL(b)	((uint32_t)((b[0]<<24) | (b[1]<<16) | (b[2]<<8) | b[3]))
+#define DSMCC_MODULE_FETCH64BITVAL(b)	((uint64_t)((b[0]<<56) | (b[1]<<48) | (b[2]<<42) | (b[3]<<32) | (b[4]<<24) | (b[5]<<16) | (b[6]<<8)| b[7] ))
 
 /* In dsmcc.c */
 void handle_dsmcc_message(unsigned char *buf, size_t len);

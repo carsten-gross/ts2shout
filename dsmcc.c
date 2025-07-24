@@ -21,6 +21,7 @@
 
 */
 
+// #define DEBUG
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -38,10 +39,13 @@
 #include "dsmcc.h"
 
 #define CACHE_DIRECTORY "/var/tmp/cache"
+#define MAXDIRELEMENTS 200
 
 /* Automatic variable, this way initialized with 0 */
 
 module_buffer_t * module_buffer[65535];
+dir_element_t dir_element[MAXDIRELEMENTS];
+uint16_t num_elements = 0;
 
 void cleanup_download_data_block(module_buffer_t* single_module_buffer, uint16_t block_nr) {
 	if (single_module_buffer == NULL) {
@@ -70,6 +74,48 @@ void cleanup_download_module_buffer(module_buffer_t* single_module_buffer) {
 	}
 	single_module_buffer->data_size = 0;
 	single_module_buffer->max_blocknr = 0;
+}
+
+void add_direlement(uint64_t id, const char* filename, uint8_t* object_key, uint8_t object_key_length) {
+	#ifdef DEBUG
+	fprintf(stderr, "add_direlement(): 0x%lx, %s (num: %d), object_key: 0x%02x%02x (length: %d)\n", id, filename, num_elements, object_key[0], object_key[1], object_key_length);
+	#endif
+	if (object_key_length > 2) {
+		assert(object_key_length <= 2);
+		return;
+	}
+	/* change already existing element */
+	for ( uint16_t i = 0; i < num_elements; i++) {
+		if (dir_element[i].object_id == id) {
+			if (memcmp(&dir_element[i].object_key, object_key, object_key_length) == 0) {
+				strncpy(dir_element[i].filename, filename, sizeof(dir_element[i].filename)-1);
+				dir_element[i].filename[sizeof(dir_element[i].filename)-1] = '\0';
+				return;
+			}
+		}
+	}
+	/* Add new element */
+	if ( num_elements < MAXDIRELEMENTS ) {
+		memcpy(&dir_element[num_elements].object_key, object_key, object_key_length);
+		dir_element[num_elements].object_key_length = object_key_length;
+
+        dir_element[num_elements].object_id = id;
+        strncpy(dir_element[num_elements].filename, filename, sizeof(dir_element[num_elements].filename)-1);
+        dir_element[num_elements].filename[sizeof(dir_element[num_elements].filename)-1] = '\0';
+        num_elements++;
+    }
+	return;
+}
+
+char *get_filename(uint64_t id, uint8_t* object_key, uint8_t* object_key_length) {
+	for ( uint16_t i = 0; i < num_elements; i++) {
+		if (dir_element[i].object_id == id) {
+			memcpy(object_key_length, &dir_element[i].object_key_length, sizeof(uint8_t));
+			memcpy(object_key, &dir_element[i].object_key, dir_element[i].object_key_length);
+			return dir_element[i].filename;
+		}
+	}
+	return 0;
 }
 
 void handle_download_data_block(unsigned char *buf, size_t len) {
@@ -104,14 +150,16 @@ void handle_download_data_block(unsigned char *buf, size_t len) {
  * See ETSI TR 101 202 V1.2.1
  * buffer = pointer to first byte in module buffer
  * offset = initially 0, increment to next BIOP header if wanted for subsequent calls *
- * lenght = module length given in DSM-CC frame header
+ * length = module length given in DSM-CC frame header
  * module_nr = module number
 */
 uint32_t biop_file_message(unsigned char *buffer, size_t offset, size_t length, uint16_t module_nr) {
 	uint32_t message_size;
+	uint32_t remaining_message_size;
 	uint32_t content_length;
 	uint8_t	 object_key_length;
-	unsigned char * object_key;
+	uint8_t* object_key;
+	uint8_t* object_id;
 	unsigned char * current_pos;
 	uint16_t object_info_length;
 	uint8_t context_list_count;
@@ -120,6 +168,7 @@ uint32_t biop_file_message(unsigned char *buffer, size_t offset, size_t length, 
 	uint8_t j = 0;
 	char filename[255];
 	FILE *f;
+	modetype_t mode;
 	/* avoid wrong usage / crashes */
 	if (length < 28 || offset > ( length - 28) ) {
 		assert(length >= 28);
@@ -136,7 +185,7 @@ uint32_t biop_file_message(unsigned char *buffer, size_t offset, size_t length, 
 		DumpHex(current_pos, 64);
 	}
 #endif
-	if (current_pos[0] == 'B' && current_pos[1] == 'I' && current_pos[2] == 'O' && current_pos[3] == 'P') {
+	if ( strncmp((char*)current_pos, "BIOP", 4) == 0 ) {
 		/* MAGIC "BIOP" found */
 	} else {
 		return 0;
@@ -147,55 +196,194 @@ uint32_t biop_file_message(unsigned char *buffer, size_t offset, size_t length, 
 	} else {
 		return 0;
 	}
-	message_size = ((uint32_t)(current_pos[8]<<24 | current_pos[9]<<16 | current_pos[10]<<8 | current_pos[11]));
-	object_key_length = current_pos[12];
-	object_key = current_pos + 13;
-	current_pos = current_pos + 13 + object_key_length;
-#ifdef DEBUG
-	fprintf(stderr, "Expect 0x000004, 'fil '\n");
-	DumpHex(current_pos, 8);
-#endif
-	if (   current_pos[0] == 0 && current_pos[1] == 0 && current_pos[2] == 0 && current_pos[3] == 4
-		&& current_pos[4] == 'f' && current_pos[5] == 'i' && current_pos[6] == 'l' && current_pos[7] == 0) {
-#ifdef DEBUG
-		fprintf(stderr, "Module: 0x%x (size %ld), typ fil found, processing: %ld\n", module_nr, length, offset + message_size + 12);
-#endif
-		/* Found fil */
-	} else {
-#ifdef DEBUG
-		fprintf(stderr, "Module: 0x%x (size %ld), typ %c%c%c found, jumping to: %ld\n", module_nr, length, current_pos[4], current_pos[5], current_pos[6], offset + message_size + 12);
-#endif
-		return message_size + 12;
-	}
-	/* Jump over 4 'fil\0' */
 	current_pos = current_pos + 8;
-	/* read object info length */
-	object_info_length = current_pos[0]<<8 | current_pos[1];
+	message_size = DSMCC_MODULE_FETCH32BITVAL(current_pos);
+	remaining_message_size = message_size;
+	object_key_length = current_pos[4];
+	object_key = current_pos + 5;
+	current_pos = current_pos + 5 + object_key_length;
+	remaining_message_size = remaining_message_size - 5 - object_key_length;
+	mode = FILETYPE;
+	if (   current_pos[0] == 0 && current_pos[1] == 0 && current_pos[2] == 0 && current_pos[3] == 4 ) {
+		if ( (strncmp((char*)current_pos + 4, "fil", 3) == 0 ) && current_pos[7] == 0 ) {
+#ifdef DEBUG
+			fprintf(stderr, "Module: 0x%x (size %ld), type File found, processing: %ld\n", module_nr, length, offset + message_size + 12);
+#endif
+			mode = FILETYPE;
+			/* Found fil */
+		} else if ( ( (strncmp((char*)current_pos + 4, "dir", 3) == 0) || (strncmp((char*)current_pos + 4, "srg", 3) == 0) )
+					&& current_pos[7] == 0 ) {
+#ifdef DEBUG
+			if (object_key_length == 0) {
+				fprintf(stderr, "Module: 0x%x (size %ld), type Directory (no object_key) found, processing: %ld\n", module_nr, length,
+				offset + message_size + 12);
+			} else {
+				fprintf(stderr, "Module: 0x%x (size %ld), type Directory (object_key_length: %d, object_key: 0x%02x) found, processing: %ld\n", module_nr, length,
+				object_key_length, object_key[0], offset + message_size + 12);
+			}
+			// DumpHex(current_pos, message_size);
+#endif
+			if (strncmp((char*)current_pos + 4, "dir", 3) == 0) {
+				mode = DIRTYPE;
+			} else {
+				mode = TOPLEVELDIRTYPE;
+			}
+			/* Found dir */
+		} else {
+#ifdef DEBUG
+			fprintf(stderr, "Module: 0x%x (size %ld), typ %c%c%c found, jumping to: %ld\n", module_nr, length, current_pos[4], current_pos[5], current_pos[6], offset + message_size + 12);
+#endif
+			return message_size + 12;
+		}
+	}
+	/* Jump over 4 'fil\0' / 'dir\0' */
+	current_pos = current_pos + 8;
+	remaining_message_size -= 8;
+	object_info_length = DSMCC_MODULE_FETCH16BITVAL(current_pos);
+	remaining_message_size -= 2;
+#ifdef DEBUG
+	// DumpHex(current_pos + 2, object_info_length);
+#endif
+	object_id = current_pos + 2;
 	current_pos = current_pos + object_info_length + 2;
+	remaining_message_size = remaining_message_size - object_info_length;
 	context_list_count = current_pos[0];
+	remaining_message_size -= 1;
 	current_pos = current_pos + 1;
 	for (i = 0; i < context_list_count; i++) {
 		current_pos = current_pos + 4; /* Skip context id */
+		remaining_message_size -= 4;
 		context_data_length = current_pos[0] <<8 | current_pos[1];
 		for (j = 0; j < context_data_length; j++) {
 			current_pos++;
+			remaining_message_size--;
 		}
 	}
 	current_pos += 4;
-	content_length = ((uint32_t)(current_pos[0]<<24 | current_pos[1]<<16 | current_pos[2]<<8 |current_pos[3]));
-	current_pos = current_pos + 4;
-	snprintf(filename, 255, CACHE_DIRECTORY "/0x%02x%02x%02x-%x.data", object_key[0], object_key[1], object_key[2], dvb_crc32(current_pos, content_length));
-#ifdef DEBUG
-	fprintf(stderr, "biop_file_message(): Module 0x%x, Offset %ld, BIOP File, writing to %s\n", module_nr, offset, filename);
-#endif
-	f = fopen(filename, "w");
-	if (! f) {
-		/* No code beauty contest here, error is handled elsewhere */
-		perror("biop_file_message(): fopen()");
-		return message_size + 12;
+	remaining_message_size -= 4;
+	// content_length = ((uint32_t)(current_pos[0]<<24 | current_pos[1]<<16 | current_pos[2]<<8 |current_pos[3]));
+	content_length = DSMCC_MODULE_FETCH32BITVAL(current_pos);
+	/*                        */
+	/* Handle an ordinary file */
+	/*                        */
+	if (mode == FILETYPE) {
+		current_pos += 4;
+		remaining_message_size -= 4;
+		uint64_t oo;
+		uint8_t ok[2];
+		uint8_t object_key_length = 0;
+		memcpy(&oo, object_id, 8);
+		if (get_filename(oo, ok, &object_key_length)) {
+			char dirname[255];
+			for (uint8_t i = 0; i < object_key_length; i++) {
+				// schmutzig, aber ist ja nur ein zwischenschritt
+				snprintf((char*)&dirname[i*2], 3, "%02x", ok[i]);
+			}
+			#ifdef DEBUG
+			fprintf(stderr, "Dirname %s, Filename %s, object_key: 0x%02x, object_key_length: %d\n", dirname, get_filename(oo, ok, &object_key_length), *ok, object_key_length);
+			#endif
+			snprintf(filename, 255, CACHE_DIRECTORY "/Dir-%.10s-%.80s", dirname, get_filename(oo, ok, &object_key_length));
+		} else {
+			snprintf(filename, 255, CACHE_DIRECTORY "/File-Module-0x%02x-ObjectId-0x%02x%02x%02x.data", module_nr, object_id[5], object_id[6], object_id[7]);
+		}
+		#ifdef DEBUG
+		fprintf(stderr, "biop_file_message(): Module 0x%x, Offset %ld, BIOP File, writing to %s\n", module_nr, offset, filename );
+		#endif
+		f = fopen(filename, "w");
+		if (! f) {
+			/* No code beauty contest here, error is handled elsewhere */
+			perror("biop_file_message(): fopen()");
+			return message_size + 12;
+		}
+		fwrite( current_pos, 1, content_length, f);
+		fclose(f);
+	} else if ( mode == DIRTYPE || mode == TOPLEVELDIRTYPE ) {
+		/*                    */
+		/* Handle a directory */
+		/*                    */
+		uint16_t bindings_count = (current_pos[0]<<8) + current_pos[1];
+		remaining_message_size -= 2;
+		current_pos += 2;
+		char comp_filename[255];
+		char comp_kind[255];
+		uint8_t object_info[8];
+		for ( i = 0; i < bindings_count; i++) {
+			#ifdef DEBUG
+			fprintf(stderr, "biop_file_message(): DIRECTORY - Module: 0x%x,  length: %d, bindings (entries): %d\n", module_nr, remaining_message_size - 2, bindings_count);
+			if (remaining_message_size > 2) {
+				// DumpHex(current_pos, remaining_message_size - 2);
+			}
+			#endif
+			uint8_t nameComponents_count = current_pos[0];
+			current_pos += 1;
+			remaining_message_size -= 1;
+			for ( int j = 0; j < nameComponents_count; j++) {
+				uint8_t id_length = current_pos[0];
+				current_pos += 1;
+				remaining_message_size -= 1;
+				strncpy(comp_filename, (char *)current_pos, id_length);
+				current_pos += id_length;
+				remaining_message_size -= id_length;
+			}
+			uint8_t kind_length = DSMCC_MODULE_FETCH8BITVAL(current_pos);
+			current_pos += 1;
+			remaining_message_size -= 1;
+			strncpy(comp_kind, (char *)current_pos, kind_length);
+			current_pos += kind_length;
+			remaining_message_size -= kind_length;
+			current_pos += 1; // skip binding_type
+			remaining_message_size -= 1;
+			/* Also skip IOR::IOR */
+			uint32_t type_id_length = DSMCC_MODULE_FETCH32BITVAL(current_pos);
+			if (type_id_length > length) {
+				assert(type_id_length < length);
+				return 0;
+			}
+			current_pos = current_pos + 4 + type_id_length;
+			remaining_message_size = remaining_message_size - 4 - type_id_length;
+			uint32_t taggedProfiles_count = DSMCC_MODULE_FETCH32BITVAL(current_pos);
+			assert(taggedProfiles_count < length);
+			if (taggedProfiles_count > length) {
+				assert(taggedProfiles_count < length);
+				return 0;
+			}
+			current_pos += 4;
+			remaining_message_size -= 4;
+			for (int i = 0; i < taggedProfiles_count; i++) {
+				current_pos += 4;  // profileId_tag
+				remaining_message_size -= 4;
+				uint32_t profile_data_length = DSMCC_MODULE_FETCH32BITVAL(current_pos);
+				#ifdef DEBUG
+				fprintf(stderr, "type_id_length: %d, taggedProfiles_count: %d, profile_data_length: %d\n", type_id_length, taggedProfiles_count, profile_data_length);
+				#endif
+				current_pos = current_pos + 4 + profile_data_length;
+				remaining_message_size -= 4;
+			}
+			uint16_t objectInfo_length = DSMCC_MODULE_FETCH16BITVAL(current_pos);
+			current_pos += 2; //
+			remaining_message_size -= 2;
+			memcpy(object_info, current_pos, fmin(objectInfo_length, 8));
+			#ifdef DEBUG
+			if (objectInfo_length > 0) {
+				fprintf(stderr, "Dirinfo: Name: %s, Kind: %s, Object_info: 0x%02x%02x%02x, objectInfo_Length: %d\n", comp_filename, comp_kind, object_info[5], object_info[6], object_info[7], objectInfo_length);
+			} else {
+				fprintf(stderr, "Dirinfo: Name: %s, Kind: %s (no Object_info)\n", comp_filename, comp_kind);
+			}
+			#endif
+			// Liste mit Filenamen
+			if (strncmp(comp_kind, "fil", 3) == 0) {
+				uint64_t oo;
+				memcpy(&oo, object_info, 8);
+				add_direlement(oo, comp_filename, object_key, object_key_length);
+			} else {
+				#ifdef DEBUG
+				DumpHex(current_pos, remaining_message_size);
+				#endif
+			}
+			current_pos += objectInfo_length;
+			remaining_message_size -= objectInfo_length;
+		} /* for ( i = 0; i < bindings_count; i++) */
 	}
-	fwrite( current_pos, 1, content_length, f);
-	fclose(f);
 	return message_size + 12;
 }	
 
@@ -203,10 +391,10 @@ void check_module_complete(module_buffer_t* single_module_buffer) {
 	uint16_t i = 0;
 	// uint16_t module_nr = 0;
 	size_t	length = 0;
-	char filename[255];
+	// char filename[255];
 	int z_result;
-	FILE *f;
-	static uint8_t message_printed = 0;
+	// FILE *f;
+	// static uint8_t message_printed = 0;
 	uint32_t message_offset = 0;
 	if (single_module_buffer == NULL) {
 		return;
@@ -249,10 +437,11 @@ void check_module_complete(module_buffer_t* single_module_buffer) {
 		current_pos = compressed_data;
 		current_length = length;
 	}
-	snprintf(filename, 255, CACHE_DIRECTORY "/0x%x%s.bin", single_module_buffer->module_number, info);
-#ifdef DEBUG
+	#if 0
+	snprintf(filename, 255, CACHE_DIRECTORY "/Module-0x%x%s.bin", single_module_buffer->module_number, info);
+	#ifdef DEBUG
 	fprintf(stderr, "check_module_complete(): Module 0x%x complete, writing to %s!\n", single_module_buffer->module_number, filename);
-#endif
+	#endif
 	f = fopen(filename, "w");
 	if (! f) {
 		if (! message_printed) {
@@ -265,6 +454,7 @@ void check_module_complete(module_buffer_t* single_module_buffer) {
 	}
 	fwrite( current_pos, 1, current_length, f);
 	fclose(f);
+	#endif
 	message_offset = biop_file_message(current_pos, 0, current_length, single_module_buffer->module_number);
 	while ( message_offset > 0 && message_offset < ( current_length - 28)  ) {
 		size_t new_offset;
@@ -274,8 +464,6 @@ void check_module_complete(module_buffer_t* single_module_buffer) {
 	cleanup_download_module_buffer(single_module_buffer);
 	return;
 }
-
-
 
 void handle_server_initate(unsigned char *buf, size_t len) {
 	uint16_t module_count;
@@ -298,13 +486,15 @@ void handle_server_initate(unsigned char *buf, size_t len) {
 
 	for (i = 0; i < module_count; i++) {
 		uint16_t module_nr;
-#ifdef DEBUG
+	#if 0
+	#ifdef DEBUG
 		fprintf(stderr, "Module_id  0x%x, Module size %d, Module_version 0x%x, module info_length %d\n",
 			    DSMCC_MODULE_MODULE_ID(current_module),
 				DSMCC_MODULE_MODULE_SIZE(current_module),
 				DSMCC_MODULE_MODULE_VERSION(current_module),
 				DSMCC_MODULE_INFO_LENGTH(current_module));
-#endif
+	#endif
+	#endif
 		module_nr = DSMCC_MODULE_MODULE_ID(current_module);
 		/* Spec says that a list of descriptors follows in length DSMCC_MODULE_INFO_LENGTH(current_module) */
 		if (module_buffer[module_nr]) {
@@ -323,7 +513,7 @@ void handle_server_initate(unsigned char *buf, size_t len) {
 
 void handle_dsmcc_message(unsigned char *buf, size_t len) {
 	/* If you want to test it ... uncomment the return */
-	return;	/* TODO: With this "return" no DSM-CC will be handled */
+	// return;	/* TODO: With this "return" no DSM-CC will be handled */
 	if (DSMCC_MESSAGE_TYPE(buf) == 0x3c) {
 		handle_download_data_block(buf, len);
 		// fprintf(stderr, "DSMCC: Download Data Block: 0x%x, Block-Nummer: 0x%x, Length: %ld\n", DSMCC_MODULE_ID(buf), DSMCC_BLOCKNR(buf), len);

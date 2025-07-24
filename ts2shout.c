@@ -587,7 +587,8 @@ static void extract_pmt_payload(unsigned char *pes_ptr, size_t pes_len, ts2shout
 		}
 	}
 #ifdef FFMPEG
-	output_logmessage("AAC inline RDS messages are %s%s\n", ((global_state->aac_inline_rds > 0)? "enabled" : "disabled"), aac_info_message);
+	output_logmessage("AAC inline RDS messages are %s (rds option %s) %s\n", ((global_state->prefer_rds && global_state->aac_inline_rds > 0)? "enabled" : "disabled"), 
+		((global_state->prefer_rds)?"given" : "not given"), aac_info_message);
 #endif
 }
 
@@ -1232,7 +1233,7 @@ int32_t extract_pes_payload( unsigned char *pes_ptr, size_t pes_len, ts2shout_ch
 		}
 	}
 #ifdef FFMPEG
-	if (global_state->aac_inline_rds && chan->synced ) {
+	if (global_state->prefer_rds && global_state->aac_inline_rds && chan->synced ) {
 		// fprintf(stderr, "Filling Offset: %ld, Buffer-size: %ld\n", data - data_base, data_size);
 		memcpy(data, es_ptr, es_len);
 		data = data + es_len;
