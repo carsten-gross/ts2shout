@@ -51,7 +51,7 @@ typedef struct dir_element {
 	uint8_t object_key_length;
 	uint8_t object_key[2];
 	char	filename[255];
-	modetype_t type;
+	modetype_t mode;
 } dir_element_t;
 
 /* Makros for accessing DSM-CC packets */

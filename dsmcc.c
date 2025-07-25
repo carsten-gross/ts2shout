@@ -76,12 +76,37 @@ void cleanup_download_module_buffer(module_buffer_t* single_module_buffer) {
 	single_module_buffer->max_blocknr = 0;
 }
 
-void add_direlement(uint64_t id, const char* filename, uint8_t* object_key, uint8_t object_key_length) {
+void add_direlement(uint64_t id, const char* filename, uint8_t* object_key, uint8_t object_key_length, modetype_t mode) {
 	#ifdef DEBUG
-	fprintf(stderr, "add_direlement(): 0x%lx, %s (num: %d), object_key: 0x%02x%02x (length: %d)\n", id, filename, num_elements, object_key[0], object_key[1], object_key_length);
+	if (mode == FILETYPE) {
+		fprintf(stderr, "add_direlement(): 0x%lx, %s (num: %d), object_key: 0x%02x%02x (length: %d)\n", id, filename, num_elements, object_key[0], object_key[1], object_key_length);
+	} else {
+		fprintf(stderr, "add_direlement(): 0x%lx, %s (num: %d) (Dirmode, object_key_len: %d)\n", id, filename, num_elements, object_key_length);
+	}
 	#endif
 	if (object_key_length > 2) {
 		assert(object_key_length <= 2);
+		return;
+	}
+	/* Directory without object_key_length */
+	if ( (mode = DIRTYPE || mode == TOPLEVELDIRTYPE) && object_key_length == 0) {
+		for ( uint16_t i = 0; i < num_elements; i++) {
+			if (dir_element[i].object_id == id) {
+				strncpy(dir_element[i].filename, filename, sizeof(dir_element[i].filename)-1);
+				dir_element[i].filename[sizeof(dir_element[i].filename)-1] = '\0';
+				dir_element[i].mode = mode;
+				return;
+			}
+		}
+		/* Add new element */
+		if ( num_elements < MAXDIRELEMENTS ) {
+			dir_element[num_elements].object_key_length = object_key_length;
+			dir_element[num_elements].object_id = id;
+			strncpy(dir_element[num_elements].filename, filename, sizeof(dir_element[num_elements].filename)-1);
+			dir_element[num_elements].filename[sizeof(dir_element[num_elements].filename)-1] = '\0';
+			dir_element[num_elements].mode = mode;
+	        num_elements++;
+		}
 		return;
 	}
 	/* change already existing element */
@@ -90,6 +115,7 @@ void add_direlement(uint64_t id, const char* filename, uint8_t* object_key, uint
 			if (memcmp(&dir_element[i].object_key, object_key, object_key_length) == 0) {
 				strncpy(dir_element[i].filename, filename, sizeof(dir_element[i].filename)-1);
 				dir_element[i].filename[sizeof(dir_element[i].filename)-1] = '\0';
+				dir_element[i].mode = mode;
 				return;
 			}
 		}
@@ -102,18 +128,23 @@ void add_direlement(uint64_t id, const char* filename, uint8_t* object_key, uint
         dir_element[num_elements].object_id = id;
         strncpy(dir_element[num_elements].filename, filename, sizeof(dir_element[num_elements].filename)-1);
         dir_element[num_elements].filename[sizeof(dir_element[num_elements].filename)-1] = '\0';
+		dir_element[num_elements].mode = mode;
         num_elements++;
     }
 	return;
 }
 
-char *get_filename(uint64_t id, uint8_t* object_key, uint8_t* object_key_length) {
-	for ( uint16_t i = 0; i < num_elements; i++) {
-		if (dir_element[i].object_id == id) {
-			memcpy(object_key_length, &dir_element[i].object_key_length, sizeof(uint8_t));
-			memcpy(object_key, &dir_element[i].object_key, dir_element[i].object_key_length);
-			return dir_element[i].filename;
+char *get_filename(uint64_t id, uint8_t* object_key, uint8_t* object_key_length, modetype_t mode) {
+	if (mode == FILETYPE) {
+		for ( uint16_t i = 0; i < num_elements; i++) {
+			if (dir_element[i].object_id == id) {
+				memcpy(object_key_length, &dir_element[i].object_key_length, sizeof(uint8_t));
+				memcpy(object_key, &dir_element[i].object_key, dir_element[i].object_key_length);
+				return dir_element[i].filename;
+			}
 		}
+	} else {
+		/* Dirname */
 	}
 	return 0;
 }
@@ -169,6 +200,8 @@ uint32_t biop_file_message(unsigned char *buffer, size_t offset, size_t length, 
 	char filename[255];
 	FILE *f;
 	modetype_t mode;
+	static uint8_t errorshown = 0; /* Show filesystem errors only once */
+
 	/* avoid wrong usage / crashes */
 	if (length < 28 || offset > ( length - 28) ) {
 		assert(length >= 28);
@@ -217,9 +250,11 @@ uint32_t biop_file_message(unsigned char *buffer, size_t offset, size_t length, 
 			if (object_key_length == 0) {
 				fprintf(stderr, "Module: 0x%x (size %ld), type Directory (no object_key) found, processing: %ld\n", module_nr, length,
 				offset + message_size + 12);
+				DumpHex(current_pos, remaining_message_size);
 			} else {
 				fprintf(stderr, "Module: 0x%x (size %ld), type Directory (object_key_length: %d, object_key: 0x%02x) found, processing: %ld\n", module_nr, length,
 				object_key_length, object_key[0], offset + message_size + 12);
+				DumpHex(current_pos, remaining_message_size);
 			}
 			// DumpHex(current_pos, message_size);
 #endif
@@ -273,16 +308,16 @@ uint32_t biop_file_message(unsigned char *buffer, size_t offset, size_t length, 
 		uint8_t ok[2];
 		uint8_t object_key_length = 0;
 		memcpy(&oo, object_id, 8);
-		if (get_filename(oo, ok, &object_key_length)) {
+		if (get_filename(oo, ok, &object_key_length, FILETYPE)) {
 			char dirname[255];
 			for (uint8_t i = 0; i < object_key_length; i++) {
 				// schmutzig, aber ist ja nur ein zwischenschritt
 				snprintf((char*)&dirname[i*2], 3, "%02x", ok[i]);
 			}
 			#ifdef DEBUG
-			fprintf(stderr, "Dirname %s, Filename %s, object_key: 0x%02x, object_key_length: %d\n", dirname, get_filename(oo, ok, &object_key_length), *ok, object_key_length);
+			fprintf(stderr, "Dirname %s, Filename %s, object_key: 0x%02x, object_key_length: %d\n", dirname, get_filename(oo, ok, &object_key_length, FILETYPE), *ok, object_key_length);
 			#endif
-			snprintf(filename, 255, CACHE_DIRECTORY "/Dir-%.10s-%.80s", dirname, get_filename(oo, ok, &object_key_length));
+			snprintf(filename, 255, CACHE_DIRECTORY "/Dir-%.10s-%.80s", dirname, get_filename(oo, ok, &object_key_length, FILETYPE));
 		} else {
 			snprintf(filename, 255, CACHE_DIRECTORY "/File-Module-0x%02x-ObjectId-0x%02x%02x%02x.data", module_nr, object_id[5], object_id[6], object_id[7]);
 		}
@@ -292,7 +327,10 @@ uint32_t biop_file_message(unsigned char *buffer, size_t offset, size_t length, 
 		f = fopen(filename, "w");
 		if (! f) {
 			/* No code beauty contest here, error is handled elsewhere */
-			perror("biop_file_message(): fopen()");
+			if (! errorshown) {
+				output_logmessage("biop_file_message(): fopen(): %s: %s\n", filename, strerror(errno));
+				errorshown = 1;
+			}
 			return message_size + 12;
 		}
 		fwrite( current_pos, 1, content_length, f);
@@ -307,6 +345,11 @@ uint32_t biop_file_message(unsigned char *buffer, size_t offset, size_t length, 
 		char comp_filename[255];
 		char comp_kind[255];
 		uint8_t object_info[8];
+		if ( bindings_count == 0) {
+			#ifdef DEBUG
+			fprintf(stderr, "biop_file_message(): DIRECTORY, no bindings .. object key 0x%02x, object_key_len %d\n", object_key[0], object_key_length);
+			#endif
+		}
 		for ( i = 0; i < bindings_count; i++) {
 			#ifdef DEBUG
 			fprintf(stderr, "biop_file_message(): DIRECTORY - Module: 0x%x,  length: %d, bindings (entries): %d\n", module_nr, remaining_message_size - 2, bindings_count);
@@ -374,8 +417,13 @@ uint32_t biop_file_message(unsigned char *buffer, size_t offset, size_t length, 
 			if (strncmp(comp_kind, "fil", 3) == 0) {
 				uint64_t oo;
 				memcpy(&oo, object_info, 8);
-				add_direlement(oo, comp_filename, object_key, object_key_length);
+				add_direlement(oo, comp_filename, object_key, object_key_length, FILETYPE);
 			} else {
+				uint64_t oo = 0;
+				if (objectInfo_length > 0) {
+					memcpy(&oo, object_info, 8);
+				}
+				add_direlement(oo, comp_filename, object_key, object_key_length, mode);
 				#ifdef DEBUG
 				DumpHex(current_pos, remaining_message_size);
 				#endif
